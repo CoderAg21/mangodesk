@@ -1,55 +1,75 @@
 require('dotenv').config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const fetch = require('node-fetch'); 
+const fetch = require('node-fetch'); // Keeping this as you needed it for network issues
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// The "System Prompt" is the set of rules the AI must follow.
-const SYSTEM_PROMPT = `
-You are a Database Intent Classifier for a MongoDB system.
-Your job is to analyze the user's request and map it to ONE of the following intents:
+// 1. DATASET KNOWLEDGE BASE
+// We explicitly tell the AI your exact CSV column names here.
+const EMPLOYEE_SCHEMA = `
+CONTEXT: You are managing an Employee Database.
+COLLECTION NAME: 'employees'
 
-1. READ_DB   (Fetching, searching, finding)
-2. WRITE_DB  (Creating, adding, inserting)
-3. UPDATE_DB (Modifying, changing, editing)
-4. DELETE_DB (Removing, deleting)
+AVAILABLE FIELDS (Exact Column Names):
+- IDENTIFIERS: employee_id, name, department, role, country, office_location
+- DATES: hire_date, termination_date
+- FINANCIALS: salary_usd, bonus_usd, stock_options (All in USD)
+- METRICS: performance_score (1-5 scale), promotion_count, project_count
+- SALES DATA: deals_closed, avg_deal_size_usd, client_revenue_usd
+- WORK STYLE: customer_satisfaction, work_hours_per_week, remote_percentage
+`;
+
+// 2. STRICT RULES FOR THE AI
+const SYSTEM_PROMPT = `
+You are a Database Intent Classifier.
+${EMPLOYEE_SCHEMA}
+
+YOUR JOB:
+1. Analyze the user prompt.
+2. Return a JSON object with the user's intent and valid MongoDB parameters.
 
 RULES:
-- Return ONLY valid JSON.
-- **ALWAYS use the key "data" for the content to be added or updated.**
-- **ALWAYS use the key "query" for the filter condition.**
+- **Keys:** Use ONLY these keys in your JSON:
+  - "intent": One of [READ_DB, WRITE_DB, UPDATE_DB, DELETE_DB]
+  - "collection": Always "employees" (unless user explicitly asks for 'users' system)
+  - "query": The filter criteria (The "Who" or "Which")
+  - "data": The data to be inserted or updated (The "What")
 
-Example READ:
-Input: "Find users active is true"
-Output: { "intent": "READ_DB", "collection": "users", "query": { "active": true } }
+- **Mapping:**
+  - If user says "salary" or "income" -> map to 'salary_usd'
+  - If user says "rating" or "score" -> map to 'performance_score'
+  - If user says "remote" -> map to 'remote_percentage'
+  - If user says "revenue" -> map to 'client_revenue_usd'
 
-Example WRITE:
-Input: "Add a user named John"
-Output: { "intent": "WRITE_DB", "collection": "users", "data": { "name": "John" } }
+- **Format:**
+  - Return RAW JSON only. Do not wrap in markdown like \`\`\`json.
 
-Example UPDATE:
-Input: "Update iPhone price to 1200"
-Output: { "intent": "UPDATE_DB", "collection": "products", "query": { "name": "iPhone" }, "data": { "price": 1200 } }
+EXAMPLES:
+Input: "Find everyone in Sales with a rating over 4"
+Output: { "intent": "READ_DB", "collection": "employees", "query": { "department": "Sales", "performance_score": { "$gt": 4 } } }
+
+Input: "Update John Doe's salary to 80,000"
+Output: { "intent": "UPDATE_DB", "collection": "employees", "query": { "name": "John Doe" }, "data": { "salary_usd": 80000 } }
 `;
+
 async function classifyIntent(userPrompt) {
   try {
     const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.5-flash", // <--- Add -001 to the end
-    systemInstruction: SYSTEM_PROMPT 
-},{
-    fetch:fetch
-});;
+        model: "gemini-2.5-flash", // Using the fast model you verified works
+        systemInstruction: SYSTEM_PROMPT 
+    }, { fetch: fetch });
 
     const result = await model.generateContent(userPrompt);
     const response = await result.response;
     const text = response.text();
 
-    // Clean up the output just in case the model adds markdown
+    // Cleanup: Remove any potential markdown formatting the AI adds
     const cleanJson = text.replace(/```json|```/g, '').trim();
     
     return JSON.parse(cleanJson);
   } catch (error) {
     console.error("AI Classification Failed:", error);
+    // Return a structured error so your app doesn't crash
     return { intent: "ERROR", message: "Could not classify intent." };
   }
 }
