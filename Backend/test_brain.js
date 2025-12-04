@@ -1,6 +1,6 @@
 // test_brain.js
 require('dotenv').config();
-const { classifyIntent } = require('./intentClassifier');
+const { classifyIntent } = require('./services/intentClassifier');
 
 async function test() {
     console.log("--- Testing AI Intent Classifier ---");
