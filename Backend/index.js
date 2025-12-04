@@ -3,13 +3,20 @@ const cors = require('cors');
 const fs = require('fs');
 const csv = require('csv-parser');
 const path = require('path');
-
+const mongoose = require('mongoose');
 const app = express();
 app.use(express.json());
 app.use(cors());
 
 const agentRoutes = require('./routes/agentRoutes');
 
+// --- DATABASE CONNECTION ---
+// If you have a cloud URI (Atlas), put it in .env. Otherwise use local.
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mangodesk';
+
+mongoose.connect(MONGO_URI)
+  .then(() => console.log(' MongoDB Connected Successfully'))
+  .catch(err => console.error(' MongoDB Connection Error:', err));
 
 let employeesData = [];
 let isDataLoaded = false;
@@ -24,12 +31,12 @@ const csvFilePath = path.join(__dirname, 'data', 'employees.csv');
 
 // Check if file exists before crashing
 if (!fs.existsSync(csvFilePath)) {
-  console.error(`❌ CRITICAL ERROR: 'employees.csv' not found at: ${csvFilePath}`);
+  console.error(` CRITICAL ERROR: 'employees.csv' not found at: ${csvFilePath}`);
   console.error("Please make sure the file is inside the 'Backend/data' folder as shown in your image.");
   process.exit(1);
 }
 
-console.log(`⏳ Loading CSV from: ${csvFilePath}`);
+console.log(` Loading CSV from: ${csvFilePath}`);
 
 fs.createReadStream(csvFilePath)
   .pipe(csv())
@@ -61,7 +68,7 @@ fs.createReadStream(csvFilePath)
   })
   .on('end', () => {
     isDataLoaded = true;
-    console.log(`✅ Success! Loaded ${employeesData.length} employees.`);
+    console.log(` Success! Loaded ${employeesData.length} employees.`);
   });
 
 app.get('/api/employees', (req, res) => {
@@ -74,4 +81,4 @@ app.get('/api/employees', (req, res) => {
 app.use('/api/brain', agentRoutes);
 
 const PORT = 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(` Server running on port ${PORT}`));
