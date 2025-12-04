@@ -5,7 +5,11 @@ const csv = require('csv-parser');
 const path = require('path');
 
 const app = express();
+app.use(express.json());
 app.use(cors());
+
+const agentRoutes = require('./routes/agentRoutes');
+
 
 let employeesData = [];
 let isDataLoaded = false;
@@ -66,6 +70,8 @@ app.get('/api/employees', (req, res) => {
   }
   res.json(employeesData);
 });
+
+app.use('/api/brain', agentRoutes);
 
 const PORT = 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
