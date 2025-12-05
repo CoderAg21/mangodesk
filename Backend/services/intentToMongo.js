@@ -43,8 +43,29 @@ const translateIntent = (aiResult) => {
                 filter: query || {},
                 update: { $set: data } // CRITICAL: Use $set so we don't overwrite the whole document
             };
+        case 'WRITE_DB':
+            if (!data) throw new Error("Create intent missing 'data' field.");
+            return {
+                action: 'create',
+                collection: targetCollection,
+                data: data
+            };
 
-        // We will add CREATE and DELETE later
+        case 'DELETE_DB':
+            const isGlobalWipeConfirmed = query && query.confirm_global_wipe === true;
+
+            // Safety Block: If no filter is given AND the override keyword is missing, throw an error.
+            if (!isGlobalWipeConfirmed && (!query || Object.keys(query).length === 0)) {
+                throw new Error("Safety Error: Must specify a target (e.g., name or ID) to delete.");
+            }
+            
+            return {
+                action: 'deleteMany', // Use deleteMany for robustness
+                collection: targetCollection, 
+                // If confirmed, filter is empty {} to delete everything. Otherwise, use the filter.
+                filter: isGlobalWipeConfirmed ? {} : query 
+            };
+        
         default:
             return {
                 action: 'unknown',

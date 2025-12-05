@@ -1,7 +1,8 @@
 require('dotenv').config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const fetch = require('node-fetch'); // Keeping this as you needed it for network issues
+const fetch = require('node-fetch'); // Keeping this as per your project setup
 
+// --- Corrected Initialization ---
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // 1. DATASET KNOWLEDGE BASE
@@ -40,6 +41,10 @@ RULES:
   - If user says "rating" or "score" -> map to 'performance_score'
   - If user says "remote" -> map to 'remote_percentage'
   - If user says "revenue" -> map to 'client_revenue_usd'
+  - If user says "Hire", "Add", or "Create" -> map to intent 'WRITE_DB'
+  - If user says "Fire", "Remove", or "Delete" -> map to intent 'DELETE_DB'
+
+- **Global Wipe:** If the user explicitly asks to 'Delete ALL employees', include the key "confirm_global_wipe": true in the query object. This is the only exception to the rule below.
 
 - **Format:**
   - Return RAW JSON only. Do not wrap in markdown like \`\`\`json.
@@ -55,7 +60,8 @@ Output: { "intent": "UPDATE_DB", "collection": "employees", "query": { "name": "
 async function classifyIntent(userPrompt) {
   try {
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash", // Using the fast model you verified works
+        // --- Corrected Model Name ---
+        model: "gemini-2.5-flash", 
         systemInstruction: SYSTEM_PROMPT 
     }, { fetch: fetch });
 
