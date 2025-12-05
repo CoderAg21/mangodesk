@@ -1,77 +1,60 @@
-require('dotenv').config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const fetch = require('node-fetch'); // Keeping this as you needed it for network issues
+require('dotenv').config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// 1. DATASET KNOWLEDGE BASE
-// We explicitly tell the AI your exact CSV column names here.
-const EMPLOYEE_SCHEMA = `
-CONTEXT: You are managing an Employee Database.
-COLLECTION NAME: 'employees'
-
-AVAILABLE FIELDS (Exact Column Names):
-- IDENTIFIERS: employee_id, name, department, role, country, office_location
-- DATES: hire_date, termination_date
-- FINANCIALS: salary_usd, bonus_usd, stock_options (All in USD)
-- METRICS: performance_score (1-5 scale), promotion_count, project_count
-- SALES DATA: deals_closed, avg_deal_size_usd, client_revenue_usd
-- WORK STYLE: customer_satisfaction, work_hours_per_week, remote_percentage
-`;
-
-// 2. STRICT RULES FOR THE AI
+// 1. DEFINE THE SYSTEM PROMPT ("THE BRAIN")
 const SYSTEM_PROMPT = `
-You are a Database Intent Classifier.
-${EMPLOYEE_SCHEMA}
+You are a Database Intent Classifier. Your job is to translate natural language user prompts into structured JSON commands for a MongoDB Employee Database.
 
-YOUR JOB:
-1. Analyze the user prompt.
-2. Return a JSON object with the user's intent and valid MongoDB parameters.
+**DATABASE SCHEMA FIELDS:**
+- Identifiers: employee_id, name, department, role, country, office_location
+- Dates: hire_date, termination_date
+- Financials: salary_usd, bonus_usd, stock_options
+- Metrics: performance_score, promotion_count, project_count, deals_closed, avg_deal_size_usd, client_revenue_usd, customer_satisfaction, work_hours_per_week, remote_percentage
 
-RULES:
-- **Keys:** Use ONLY these keys in your JSON:
-  - "intent": One of [READ_DB, WRITE_DB, UPDATE_DB, DELETE_DB]
-  - "collection": Always "employees" (unless user explicitly asks for 'users' system)
-  - "query": The filter criteria (The "Who" or "Which")
-  - "data": The data to be inserted or updated (The "What")
+**RULES:**
+1. **Identify Operation:** Map the user's request to one of: "CREATE", "READ", "UPDATE", "DELETE".
+2. **Safety Check:** - If the action is "DELETE", set "requires_confirmation": true.
+   - If the action is a bulk "UPDATE" (no specific name/ID provided), set "requires_confirmation": true.
+3. **Multi-Step:** If the user asks for two distinct actions (e.g., "Fire John AND Hire Mike"), return two intent objects in the list.
+4. **Parameter Extraction:** Extract specific values. If a user says "Sales Department", map it to { "department": "Sales" }.
+5. **Missing Info:** If CREATE is requested but "name" or "role" is missing, add them to "missing_critical_fields".
 
-- **Mapping:**
-  - If user says "salary" or "income" -> map to 'salary_usd'
-  - If user says "rating" or "score" -> map to 'performance_score'
-  - If user says "remote" -> map to 'remote_percentage'
-  - If user says "revenue" -> map to 'client_revenue_usd'
-
-- **Format:**
-  - Return RAW JSON only. Do not wrap in markdown like \`\`\`json.
-
-EXAMPLES:
-Input: "Find everyone in Sales with a rating over 4"
-Output: { "intent": "READ_DB", "collection": "employees", "query": { "department": "Sales", "performance_score": { "$gt": 4 } } }
-
-Input: "Update John Doe's salary to 80,000"
-Output: { "intent": "UPDATE_DB", "collection": "employees", "query": { "name": "John Doe" }, "data": { "salary_usd": 80000 } }
+**OUTPUT FORMAT (JSON ONLY):**
+{
+  "intents": [
+    {
+      "action": "CREATE" | "READ" | "UPDATE" | "DELETE",
+      "target_entity": "Employee",
+      "filter_criteria": { "field": "value" }, 
+      "data_payload": { "field": "new_value" },
+      "meta": {
+        "requires_confirmation": boolean,
+        "missing_critical_fields": ["field_name"]
+      }
+    }
+  ]
+}
 `;
 
-async function classifyIntent(userPrompt) {
-  try {
-    const model = genAI.getGenerativeModel({ 
-        model: "gemini-2.5-flash", // Using the fast model you verified works
-        systemInstruction: SYSTEM_PROMPT 
-    }, { fetch: fetch });
+// 2. CONFIGURE THE MODEL
+const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    systemInstruction: SYSTEM_PROMPT,
+    generationConfig: { responseMimeType: "application/json" }
+});
 
-    const result = await model.generateContent(userPrompt);
-    const response = await result.response;
-    const text = response.text();
-
-    // Cleanup: Remove any potential markdown formatting the AI adds
-    const cleanJson = text.replace(/```json|```/g, '').trim();
-    
-    return JSON.parse(cleanJson);
-  } catch (error) {
-    console.error("AI Classification Failed:", error);
-    // Return a structured error so your app doesn't crash
-    return { intent: "ERROR", message: "Could not classify intent." };
-  }
+// 3. EXPORT THE FUNCTION
+async function parseUserIntent(userPrompt) {
+    try {
+        const result = await model.generateContent(userPrompt);
+        const responseText = result.response.text();
+        return JSON.parse(responseText);
+    } catch (error) {
+        console.error("Gemini Error:", error);
+        return { error: "Failed to parse intent" };
+    }
 }
 
-module.exports = { classifyIntent };
+module.exports = { parseUserIntent };

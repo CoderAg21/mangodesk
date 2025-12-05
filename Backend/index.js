@@ -3,22 +3,27 @@ const cors = require('cors');
 const fs = require('fs');
 const csv = require('csv-parser');
 const path = require('path');
-
+const mongoose = require('mongoose');
+const { test_brain } = require('./test_brain');
+const Employee = require('./models/employeeModel');
+const { parseUserIntent } = require('./intentclassifier');
+const { setGlobalDispatcher, ProxyAgent } = require("undici");
+require('dotenv').config();
+if (process.env.PROXY_URL) {
+    console.log(`Using Proxy: ${process.env.PROXY_URL}`);
+    const dispatcher = new ProxyAgent(process.env.PROXY_URL);
+    setGlobalDispatcher(dispatcher);
+}
 const app = express();
+app.use(express.json());
 app.use(cors());
 
-let employeesData = [];
 let isDataLoaded = false;
 
-// Helper arrays for synthetic data
-const educationLevels = ['B.Tech', 'M.Tech', 'PhD', 'MBA', 'B.Sc'];
-const genders = ['Male', 'Female'];
-const currentYear = new Date().getFullYear();
+const MONGO_URI = 'mongodb://127.0.0.1:27017/mangoDesk';
 
-// --- CRITICAL FIX: POINT TO THE 'data' FOLDER ---
+
 const csvFilePath = path.join(__dirname, 'data', 'employees.csv');
-
-// Check if file exists before crashing
 if (!fs.existsSync(csvFilePath)) {
   console.error(`❌ CRITICAL ERROR: 'employees.csv' not found at: ${csvFilePath}`);
   console.error("Please make sure the file is inside the 'Backend/data' folder as shown in your image.");
@@ -57,7 +62,7 @@ fs.createReadStream(csvFilePath)
   })
   .on('end', () => {
     isDataLoaded = true;
-    console.log(`✅ Success! Loaded ${employeesData.length} employees.`);
+    console.log(`✅ Success! Loaded ${Employee.length} employees.`);
   });
 
 app.get('/api/employees', (req, res) => {
@@ -67,5 +72,43 @@ app.get('/api/employees', (req, res) => {
   res.json(employeesData);
 });
 
+
+
+//-- DATABASE CONNECTION (Optional for this stage, but good for setup) --
+mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/employeeDB');
+
+
+//-----------------DHAIRYA---------------->
+app.post('/api/analyze-intent', async (req, res) => {
+    try {
+        // Debug Log to prove it received data
+        console.log("Headers:", req.headers['content-type']);
+        console.log("Body:", req.body);
+
+        const { prompt } = req.body;
+
+        if (!prompt) {
+            return res.status(400).json({ error: "Prompt is required in body" });
+        }
+
+        console.log(`Analyzing Prompt: "${prompt}"`);
+
+        // Call Gemini (via Proxy)
+        const intentData = await parseUserIntent(prompt);
+
+        if (intentData.error) {
+            return res.status(500).json(intentData);
+        }
+        
+        res.json(intentData);
+
+    } catch (error) {
+        console.error("Server Error:", error);
+        res.status(500).json({ error: "Internal Server Error", details: error.message });
+    }
+});
+
+
 const PORT = 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+

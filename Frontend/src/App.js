@@ -114,45 +114,45 @@ export default function App() {
   }
 
   return (
-    <Dashboard>
-    </Dashboard>
-    //   <div className="app-container">
-    //   <Sidebar onNewChat={handleNewChat} />
+    // <Dashboard>
+    // </Dashboard>
+      <div className="app-container">
+      <Sidebar onNewChat={handleNewChat} />
 
-    //   <div className="main">
-    //     <header className="topbar">
-    //       <div className="topbar-left">
-    //         <button className="menu-btn"><MenuIcon className="icon" /></button>
-    //         <Logo />
-    //       </div>
-    //       <div className="topbar-right">Simple UI Clone</div>
-    //     </header>
+      <div className="main">
+        <header className="topbar">
+          <div className="topbar-left">
+            <button className="menu-btn"><MenuIcon className="icon" /></button>
+            <Logo />
+          </div>
+          <div className="topbar-right">Simple UI Clone</div>
+        </header>
 
-    //     <main className="main-chat">
-    //       <ChatArea messages={messages} onUsePrompt={handleUsePrompt} />
-    //     </main>
+        <main className="main-chat">
+          <ChatArea messages={messages} onUsePrompt={handleUsePrompt} />
+        </main>
 
-    //     <footer className="input-area">
-    //       <input
-    //         value={input}
-    //         onChange={(e) => setInput(e.target.value)}
-    //         onKeyPress={(e) => {
-    //           if (e.key === 'Enter') {
-    //             sendMessage(input);
-    //           }
-    //         }}
-    //         placeholder="Type a message..."
-    //         className="chat-input"
-    //       />
-    //       <button
-    //         onClick={() => sendMessage(input)}
-    //         className="send-btn"
-    //         disabled={!input.trim()}
-    //       >
-    //         <SendIcon className="icon" />
-    //       </button>
-    //     </footer>
-    //   </div>
-    // </div>
+        <footer className="input-area">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter') {
+                sendMessage(input);
+              }
+            }}
+            placeholder="Type a message..."
+            className="chat-input"
+          />
+          <button
+            onClick={() => sendMessage(input)}
+            className="send-btn"
+            disabled={!input.trim()}
+          >
+            <SendIcon className="icon" />
+          </button>
+        </footer>
+      </div>
+    </div>
   );
 }
