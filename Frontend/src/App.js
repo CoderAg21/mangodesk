@@ -4,8 +4,11 @@ import Dashboard from "./Routes/Dashboard";
 import Notfound from "./Routes/Notfound";
 import Homepage from "./Routes/Homepage";
 import LandingPage from "./Routes/LandingPage";
-import LoginPage from "./Routes/LoginPage";
+import Login from "./Routes/Login";
 import Team from "./Routes/Team";
+import Signup from "./Routes/Signup";
+// import SignUpPage from "./Routes/SignUp";
+// import Login from "./Routes/Login";
 
 function App() {
   return (
@@ -16,7 +19,8 @@ function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="*" element={<Notfound />} />
         <Route path="/" element={<LandingPage />} />
-        <Route path="/loginpage" element={<LoginPage />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
         <Route path="/team" element={<Team/>} />
 
       </Routes>
