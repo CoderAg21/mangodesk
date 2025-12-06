@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Plus, MessageSquare, Sparkles, Zap, Lightbulb, Globe, ChevronLeft, Menu, X, Bot, User, Loader2 } from 'lucide-react';
+import { Send, Plus, MessageSquare, Sparkles, Zap, Lightbulb, Globe, Menu, X, Bot, User, Loader2 } from 'lucide-react';
 
 export default function Home() {
   const [messages, setMessages] = useState([]);

@@ -7,12 +7,10 @@ import {
   Zap, 
   Code, 
   Heart, 
-  ArrowUpRight,
   Target,
   Sparkles,
   Github,
   Linkedin,
-  Twitter
 } from 'lucide-react';
 import Header from '../Components/Header';
 import Footer from '../Components/Footer';
@@ -37,44 +35,6 @@ const StatCard = ({ label, value, icon: Icon, delay }) => (
     </div>
   </motion.div>
 );
-
-const TeamMember = ({ name, role, image, delay }) => (
-  <motion.div
-    initial={{ opacity: 0, scale: 0.9 }}
-    whileInView={{ opacity: 1, scale: 1 }}
-    viewport={{ once: true }}
-    transition={{ delay, duration: 0.5 }}
-    whileHover={{ y: -10 }}
-    className="group relative"
-  >
-    <div className="absolute inset-0 bg-gradient-to-b from-transparent via-amber-500/5 to-rose-500/20 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-    <div className="relative overflow-hidden rounded-3xl aspect-[3/4] mb-4 border border-white/5 group-hover:border-white/20 transition-colors">
-      <img 
-        src={image} 
-        alt={name}
-        className="object-cover w-full h-full grayscale group-hover:grayscale-0 transition-all duration-700 scale-100 group-hover:scale-110"
-      />
-      
-      {/* Social Overlay */}
-      <div className="absolute inset-x-0 bottom-0 p-6 translate-y-full group-hover:translate-y-0 transition-transform duration-500 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent">
-        <div className="flex gap-4 justify-center">
-          <button className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-            <Linkedin className="w-5 h-5 text-white" />
-          </button>
-          <button className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-            <Twitter className="w-5 h-5 text-white" />
-          </button>
-          <button className="p-2 rounded-full bg-white/10 hover:bg-white/20 transition-colors">
-            <Github className="w-5 h-5 text-white" />
-          </button>
-        </div>
-      </div>
-    </div>
-    <h3 className="text-xl font-bold text-white mb-1">{name}</h3>
-    <p className="text-amber-400/80 text-sm font-medium">{role}</p>
-  </motion.div>
-);
-
 export default function About() {
   const containerRef = useRef(null);
   const { scrollYProgress } = useScroll({
@@ -102,7 +62,6 @@ export default function About() {
         />
       </div>
 
-      {/* Header Section */}
       <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 px-6 overflow-hidden">
         <div className="max-w-7xl mx-auto text-center relative z-10">
           <motion.div
@@ -145,7 +104,6 @@ export default function About() {
         </div>
       </section>
 
-      {/* Stats Section */}
       <section className="py-20 border-y border-white/5 bg-slate-900/50 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
@@ -157,9 +115,6 @@ export default function About() {
         </div>
       </section>
 
-  
-
-      {/* Team Section */}
  <section className="py-32 px-6 bg-gradient-to-b from-slate-900/50 to-slate-950">
   <div className="max-w-7xl mx-auto">
     <motion.div 
@@ -224,18 +179,15 @@ export default function About() {
           whileHover={{ y: -10 }}
           className="group relative"
         >
-          {/* Dynamic Glow Effect based on member's color */}
           <div className={`absolute inset-0 bg-gradient-to-b ${member.gradient} rounded-3xl opacity-0 group-hover:opacity-20 blur-xl transition-opacity duration-500`} />
           
           <div className="relative overflow-hidden rounded-3xl aspect-[3/4] mb-4 border border-white/5 group-hover:border-white/20 transition-colors bg-slate-900">
-            {/* Fetching Image directly from GitHub */}
             <img 
               src={`https://github.com/${member.githubUser}.png`}
               alt={member.name}
               className="object-cover w-full h-full grayscale group-hover:grayscale-0 transition-all duration-700 scale-100 group-hover:scale-110"
             />
             
-            {/* Social Overlay */}
             <div className="absolute inset-x-0 bottom-0 p-6 translate-y-full group-hover:translate-y-0 transition-transform duration-500 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent">
               <div className="flex gap-3 justify-center">
                 <a href={`https://github.com/${member.githubUser}`} target="_blank" rel="noreferrer" className="p-2 rounded-full bg-white/10 hover:bg-white/20 hover:text-white transition-colors text-white/70">
@@ -244,9 +196,7 @@ export default function About() {
                 <a href={member.linkedin} className="p-2 rounded-full bg-white/10 hover:bg-white/20 hover:text-white transition-colors text-white/70">
                   <Linkedin className="w-5 h-5" />
                 </a>
-                {/* Replaced Twitter with Instagram per your data */}
                 <a href={member.instagram} className="p-2 rounded-full bg-white/10 hover:bg-white/20 hover:text-white transition-colors text-white/70">
-                   {/* Using a generic globe or camera icon if Lucide doesn't have Instagram, or stick to Lucide's Camera */}
                    <Globe className="w-5 h-5" />
                 </a>
               </div>

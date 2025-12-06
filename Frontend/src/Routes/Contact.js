@@ -12,7 +12,6 @@ import {
   MessageSquare,
   Clock
 } from 'lucide-react';
-import Footer from '../Components/Footer';
 import Header from '../Components/Header';
 const InputField = ({ label, type = "text", placeholder, delay }) => {
   const [focused, setFocused] = useState(false);

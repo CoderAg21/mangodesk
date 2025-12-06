@@ -95,7 +95,7 @@ export default function WhyMangoDesk() {
           
           
           <div className="grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
-            {/* The Old Way */}
+          
             <motion.div 
               initial={{ opacity: 0, x: -50 }}
               whileInView={{ opacity: 1, x: 0 }}
@@ -236,14 +236,14 @@ export default function WhyMangoDesk() {
                    <div className="bg-slate-800/80 backdrop-blur border border-white/10 rounded-2xl p-6 flex flex-col justify-between">
                       <TrendingUp className="w-8 h-8 text-green-400 mb-4" />
                       <div>
-                        <div className="text-3xl font-bold text-white">300%</div>
+                        <div className="text-3xl font-bold text-white">Undefined</div>
                         <div className="text-sm text-slate-400">Faster Reporting</div>
                       </div>
                    </div>
                    <div className="bg-slate-800/80 backdrop-blur border border-white/10 rounded-2xl p-6 flex flex-col justify-between mt-8">
                       <Clock className="w-8 h-8 text-blue-400 mb-4" />
                       <div>
-                        <div className="text-3xl font-bold text-white">20hrs</div>
+                        <div className="text-3xl font-bold text-white">nullhrs</div>
                         <div className="text-sm text-slate-400">Saved Weekly</div>
                       </div>
                    </div>
@@ -322,7 +322,7 @@ export default function WhyMangoDesk() {
             <span className="text-slate-600 line-through decoration-amber-500/50">dashboards?</span>
           </h2>
           <p className="text-xl text-slate-400 mb-10 max-w-2xl mx-auto relative z-10">
-            Join the enterprise revolution. Experience data that talks back.
+            Join the revolution. Experience data that talks back.
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center relative z-10">
