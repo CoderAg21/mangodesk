@@ -1,34 +1,23 @@
-import React, { useState } from 'react';
-import './App.css'; 
-import Dashboard from './Components/Dashboard';
+import React from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import Dashboard from "./Routes/Dashboard";
+import Notfound from "./Routes/Notfound";
+import Homepage from "./Routes/Homepage";
 
-
-// Small icon components
-const MenuIcon = (props) => (
-  <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor">
-    <line x1="3" y1="12" x2="21" y2="12" />
-    <line x1="3" y1="6" x2="21" y2="6" />
-    <line x1="3" y1="18" x2="21" y2="18" />
-  </svg>
-);
-
-const SendIcon = (props) => (
-  <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor">
-    <line x1="22" y1="2" x2="11" y2="13" />
-    <polygon points="22 2 15 22 11 13 2 9 22 2" />
-  </svg>
-);
-
-// LOGO
-function Logo() {
+function App() {
   return (
-    <div className="logo">
-      <div className="logo-circle">G</div>
-      <div className="logo-text">Clone</div>
-    </div>
+
+    <Router>
+      <Routes>
+        <Route path="/" element={<Homepage />} />
+        <Route path="/" element={<Dashboard />} />
+        {/* <Route path="*" element={<Notfound />} /> */}
+      </Routes>
+    </Router>
   );
 }
 
+<<<<<<< HEAD
 // SIDEBAR
 function Sidebar({ onNewChat }) {
   return (
@@ -156,3 +145,6 @@ export default function App() {
     </div>
   );
 }
+=======
+export default App;
+>>>>>>> 4f88a26e6619216f34d160978a03f765ba311de3

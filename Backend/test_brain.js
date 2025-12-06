@@ -2,7 +2,7 @@ require('dotenv').config(); // Load API Key and Proxy URL
 const { setGlobalDispatcher, ProxyAgent } = require("undici");
 const { parseUserIntent } = require('./intentclassifier');
 
-// --- 1. PROXY CONFIGURATION ---
+// -------- 1. PROXY CONFIGURATION -------
 // We need this here too, otherwise the script cannot talk to the outside world
 if (process.env.PROXY_URL) {
     console.log(`[System] Configuring Proxy: ${process.env.PROXY_URL}`);
