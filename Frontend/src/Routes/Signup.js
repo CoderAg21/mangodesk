@@ -68,7 +68,7 @@ const SignUpPage = () => {
           <h2 className="text-2xl font-bold text-white">Create Account</h2>
         </div>
         <p className="text-center text-gray-400 mb-8">
-          Join NexusAI to unlock your potential.
+          Join MangoDeskAI to unlock your potential.
         </p>
 
         <form onSubmit={handleSignUp}>

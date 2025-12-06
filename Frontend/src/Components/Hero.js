@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom'
+
 import { motion, AnimatePresence, useScroll, useTransform, useInView } from 'framer-motion';
 import { 
   Sparkles, 
@@ -85,26 +87,26 @@ export default function Hero() {
     },
   ];
 
-  const testimonials = [
-    {
-      quote: "MangoDesk transformed how we handle data. What took days now happens in seconds.",
-      author: "Sarah Chen",
-      role: "CTO, TechCorp",
-      avatar: "S"
-    },
-    {
-      quote: "The voice control feature is revolutionary. Our team adoption rate hit 95% in week one.",
-      author: "Marcus Johnson",
-      role: "VP Operations, DataFlow",
-      avatar: "M"
-    },
-    {
-      quote: "Finally, an AI tool that actually understands enterprise complexity.",
-      author: "Elena Vasquez",
-      role: "Head of Analytics, GlobalFin",
-      avatar: "E"
-    },
-  ];
+const testimonials = [
+  {
+    quote: "The interface is simple enough for my non-tech staff to use without much training. Setup was done in a day.",
+    author: "Priya Sharma",
+    role: "Operations Manager, City Logistics",
+    avatar: "P"
+  },
+  {
+    quote: "Helped us organize our client data properly. The search feature is quick, and the support team is actually responsive when we have issues.",
+    author: "Arjun Mehta",
+    role: "Co-founder, DesignSpace",
+    avatar: "A"
+  },
+  {
+    quote: "It took a little time to integrate with our existing tools, but now it runs smoothly. Saves us about 3-4 hours every week.",
+    author: "Sneha Reddy",
+    role: "Project Lead, TechFlow Solutions",
+    avatar: "S"
+  }
+];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white overflow-x-hidden">
@@ -156,7 +158,7 @@ export default function Hero() {
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 mb-6"
               >
                 <Sparkles className="w-4 h-4 text-amber-400" />
-                <span className="text-sm font-medium text-amber-400">Introducing Agentic AI 2.0</span>
+                <span className="text-sm font-medium text-amber-400">Introducing Agentic AI 1.0.0</span>
               </motion.div>
 
               <motion.h1
@@ -658,7 +660,8 @@ export default function Hero() {
                   whileTap={{ scale: 0.95 }}
                   className="px-10 py-4 border border-white/20 rounded-2xl font-semibold hover:bg-white/5 transition-all"
                 >
-                  Contact Us
+                  <Link to = "/contact">Contact Us</Link>
+                  
                 </motion.button>
               </div>
             </div>
