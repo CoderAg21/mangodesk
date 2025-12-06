@@ -283,10 +283,8 @@ export default function Home() {
               <span className="font-semibold text-white">NexusAI</span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs px-3 py-1.5 rounded-full bg-gradient-to-r from-violet-500/20 to-purple-500/20 text-violet-300 font-medium border border-violet-500/20">
-              GPT-4 Turbo
-            </span>
+          <div className="flex items-center gap-2 m-4">
+            
           </div>
         </header>
 
