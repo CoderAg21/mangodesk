@@ -1,71 +1,49 @@
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
-const csv = require('csv-parser');
 const path = require('path');
+const csv = require('csv-parser');
 
 const app = express();
-app.use(cors());
+const PORT = 5000;
 
-let employeesData = [];
-let isDataLoaded = false;
+// Middleware
+app.use(cors()); // Allows your React app to fetch from port 5000
 
-// Helper arrays for synthetic data
-const educationLevels = ['B.Tech', 'M.Tech', 'PhD', 'MBA', 'B.Sc'];
-const genders = ['Male', 'Female'];
-const currentYear = new Date().getFullYear();
-
-// --- CRITICAL FIX: POINT TO THE 'data' FOLDER ---
-const csvFilePath = path.join(__dirname, 'data', 'employees.csv');
-
-// Check if file exists before crashing
-if (!fs.existsSync(csvFilePath)) {
-  console.error(`❌ CRITICAL ERROR: 'employees.csv' not found at: ${csvFilePath}`);
-  console.error("Please make sure the file is inside the 'Backend/data' folder as shown in your image.");
-  process.exit(1);
-}
-
-console.log(`⏳ Loading CSV from: ${csvFilePath}`);
-
-fs.createReadStream(csvFilePath)
-  .pipe(csv())
-  .on('data', (row) => {
-    try {
-      // Calculate missing fields
-      const hireYear = row.hire_date ? new Date(row.hire_date).getFullYear() : 2020;
-      const age = (currentYear - hireYear) + 22 + Math.floor(Math.random() * 10);
-      const gender = genders[Math.floor(Math.random() * genders.length)];
-      const education = educationLevels[Math.floor(Math.random() * educationLevels.length)];
-      const leaves = Math.floor(Math.random() * 25);
-
-      employeesData.push({
-        ...row,
-        salary_usd: parseInt(row.salary_usd) || 0,
-        bonus_usd: parseInt(row.bonus_usd) || 0,
-        performance_score: parseFloat(row.performance_score) || 3.0,
-        promotion_count: parseInt(row.promotion_count) || 0,
-        remote_percentage: parseInt(row.remote_percentage) || 0,
-        age: age,
-        gender: gender,
-        education: education,
-        leaves_taken: leaves,
-        experience_years: currentYear - hireYear
-      });
-    } catch (err) {
-      // Skip bad rows quietly
-    }
-  })
-  .on('end', () => {
-    isDataLoaded = true;
-    console.log(`✅ Success! Loaded ${employeesData.length} employees.`);
-  });
-
+// Route to serve CSV data as JSON
 app.get('/api/employees', (req, res) => {
-  if (!isDataLoaded) {
-    return res.status(503).json({ error: "Still loading data, please wait..." });
-  }
-  res.json(employeesData);
+  const results = [];
+  const csvFilePath = path.join(__dirname, 'data', 'employees.csv');
+
+  fs.createReadStream(csvFilePath)
+    .pipe(csv())
+    .on('data', (data) => {
+      // CSV parsers read everything as strings. 
+      // We must parse numbers so your Dashboard math works.
+      const formattedData = {
+        ...data,
+        age: parseInt(data.age) || 0,
+        performance_score: parseFloat(data.performance_score) || 0,
+        salary_usd: parseFloat(data.salary_usd) || 0,
+        bonus_usd: parseFloat(data.bonus_usd) || 0,
+        remote_percentage: parseInt(data.remote_percentage) || 0,
+        experience_years: parseInt(data.experience_years) || 0,
+        promotion_count: parseInt(data.promotion_count) || 0,
+        // Ensure dates are strings or handle them as needed
+        hire_date: data.hire_date, 
+        termination_date: data.termination_date === '' ? null : data.termination_date
+      };
+      results.push(formattedData);
+    })
+    .on('end', () => {
+      res.json(results);
+    })
+    .on('error', (err) => {
+      console.error("Error reading CSV:", err);
+      res.status(500).json({ error: "Failed to read data" });
+    });
 });
 
-const PORT = 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});
