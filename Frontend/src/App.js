@@ -8,6 +8,7 @@ import Login from "./Routes/Login";
 import Team from "./Routes/Team";
 import Signup from "./Routes/Signup";
 import WhyMangoDesk from "./Routes/WhyMangoDesk";
+import About from "./Routes/About";
 // import SignUpPage from "./Routes/SignUp";
 // import Login from "./Routes/Login";
 
@@ -23,6 +24,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/team" element={<Team/>} />
+        <Route path="/about" element={<About/>} />
         <Route path="/why-mangodesk" element={<WhyMangoDesk/>} />
 
       </Routes>
