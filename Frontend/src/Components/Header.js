@@ -32,6 +32,7 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
+          <Link to='/'>
           <motion.div 
             whileHover={{ scale: 1.02 }}
             className="flex items-center gap-3 cursor-pointer"
@@ -43,6 +44,7 @@ export default function Header() {
               MangoDesk
             </span>
           </motion.div>
+          </Link>
 
           {/* Desktop Nav */}
           <div className="hidden lg:flex items-center gap-8">
