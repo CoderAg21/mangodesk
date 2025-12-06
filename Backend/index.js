@@ -1,33 +1,77 @@
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "./.env") });
+
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
-const path = require('path');
+const mongoose = require('mongoose');
+const { test_brain } = require('./test_brain'); 
+const Employee = require('./models/employeeModel'); 
+const { parseUserIntent } = require('./intentclassifier');
+const { setGlobalDispatcher, ProxyAgent } = require("undici");
+const session = require("express-session");
+const passport = require("passport");
+const passportSetup = require("./config/passport");
 const csv = require('csv-parser');
-const moment = require('moment'); // You might need to install moment: npm install moment
+const moment = require('moment'); 
+
+// Proxy Configuration
+if (process.env.PROXY_URL) {
+    console.log(`Using Proxy: ${process.env.PROXY_URL}`);
+    const dispatcher = new ProxyAgent(process.env.PROXY_URL);
+    setGlobalDispatcher(dispatcher);
+}
 
 const app = express();
+app.use(express.json());
 const PORT = 5000;
 
-app.use(cors());
+app.use(cors({
+    origin: "http://localhost:3000", 
+    methods: "GET,POST,PUT,DELETE",
+    credentials: true, 
+}));
 
-// Helper to calculate tenure in years
+const MONGO_URI = 'mongodb://127.0.0.1:27017/mangoDesk';
+
+// Session Setup
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "fallback_secret_key_123", 
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false }, // Set to true only if using HTTPS
+  })
+);
+
+// Passport Setup
+app.use(passport.initialize());
+app.use(passport.session());
+passportSetup(passport);
+
+// ------------------- DATA HELPER ------------------- //
 const calculateTenure = (hireDate, termDate) => {
   const start = moment(hireDate, ['M/D/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY']);
   if (!start.isValid()) return 0;
   
-  // If termDate is invalid, empty, or '######', assume current date
   let end = moment();
   if (termDate && termDate !== '######' && termDate.trim() !== '') {
     const term = moment(termDate, ['M/D/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY']);
     if (term.isValid()) end = term;
   }
-
   return parseFloat(end.diff(start, 'years', true).toFixed(1));
 };
 
+// ------------------- ROUTES ------------------- //
+
+// 1. Get Employees (Reads CSV on request)
 app.get('/api/employees', (req, res) => {
   const results = [];
   const csvFilePath = path.join(__dirname, 'data', 'employees.csv');
+
+  if (!fs.existsSync(csvFilePath)) {
+      return res.status(500).json({ error: "CSV file not found" });
+  }
 
   fs.createReadStream(csvFilePath)
     .pipe(csv())
@@ -80,6 +124,61 @@ app.get('/api/employees', (req, res) => {
     });
 });
 
+// 2. Intent Analysis
+app.post('/api/analyze-intent', async (req, res) => {
+    try {
+        const { prompt } = req.body;
+        if (!prompt) return res.status(400).json({ error: "Prompt is required" });
+
+        console.log(`Analyzing Prompt: "${prompt}"`);
+        const intentData = await parseUserIntent(prompt); // Calls Gemini
+
+        if (intentData.error) return res.status(500).json(intentData);
+        res.json(intentData);
+
+    } catch (error) {
+        console.error("Server Error:", error);
+        res.status(500).json({ error: "Internal Server Error", details: error.message });
+    }
+});;
+
+// 3. Auth Routes (Google)
+app.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+
+app.get(
+  "/google/callback",
+  passport.authenticate("google", {
+    failureRedirect: "http://localhost:3000/login?error=unauthorized", 
+    successRedirect: "http://localhost:3000", 
+  })
+);
+
+app.get("/login/success", (req, res) => {
+  if (req.user) {
+    res.status(200).json({ success: true, user: req.user });
+  } else {
+    res.status(401).json({ success: false, message: "Not authenticated" });
+  }
+});
+
+app.get("/logout", (req, res, next) => {
+  req.logout((err) => {
+    if (err) return next(err);
+    res.redirect("http://localhost:3000"); // Redirect to frontend
+  });
+});
+
+// 4. Test Route
+app.get('/signup', (req, res) => { // Fixed typo 'singup'
+  res.send('Signup here');
+});
+
+// ------------------- SERVER START ------------------- //
+mongoose.connect(MONGO_URI)
+  .then(() => console.log("MongoDB connected"))
+  .catch((err) => console.log(" DB Error:", err));
+
+
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:5000`);
 });
