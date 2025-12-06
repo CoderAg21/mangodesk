@@ -80,9 +80,9 @@ export default function LandingPage() {
   const navLinks = [
     { name: 'Features', href: '#features' },
     { name: 'Solutions', href: '#solutions' },
-    { name: 'Pricing', href: '#pricing' },
-    { name: 'Resources', href: '#resources' },
-    { name: 'Enterprise', href: '#enterprise' },
+    { name: 'Why Manogdesk?', href: '#pricing' },
+    { name: 'About', href: '#resources' },
+    { name: 'Our Team', href: '#enterprise' },
   ];
 
   const features = [
@@ -112,12 +112,12 @@ export default function LandingPage() {
     },
   ];
 
-  const stats = [
-    { value: '10M+', label: 'Data Operations Daily' },
-    { value: '500+', label: 'Enterprise Clients' },
-    { value: '99.99%', label: 'Uptime SLA' },
-    { value: '<50ms', label: 'Response Time' },
-  ];
+//   const stats = [
+//     { value: '10M+', label: 'Data Operations Daily' },
+//     { value: '500+', label: 'Enterprise Clients' },
+//     { value: '99.99%', label: 'Uptime SLA' },
+//     { value: '<50ms', label: 'Response Time' },
+//   ];
 
   const testimonials = [
     {
@@ -222,7 +222,7 @@ export default function LandingPage() {
                 whileTap={{ scale: 0.95 }}
                 className="px-6 py-2.5 text-sm font-semibold bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40 transition-all duration-300"
               >
-                Start Free Trial
+                Login
               </motion.button>
             </div>
 
@@ -351,11 +351,11 @@ export default function LandingPage() {
                 className="mt-12 pt-8 border-t border-white/5"
               >
                 <p className="text-xs text-white/30 mb-4 uppercase tracking-wider">Trusted by industry leaders</p>
-                <div className="flex items-center gap-8 opacity-40">
+                {/* <div className="flex items-center gap-8 opacity-40">
                   {['Microsoft', 'Salesforce', 'Oracle', 'SAP'].map((brand) => (
                     <span key={brand} className="text-lg font-bold text-white/60">{brand}</span>
                   ))}
-                </div>
+                </div> */}
               </motion.div>
             </motion.div>
 
@@ -486,7 +486,7 @@ export default function LandingPage() {
                   </motion.div>
 
                   {/* Quick Stats */}
-                  <div className="grid grid-cols-3 gap-3 mt-6">
+                  {/* <div className="grid grid-cols-3 gap-3 mt-6">
                     {[
                       { label: 'Datasets', value: '24' },
                       { label: 'Operations', value: '1.2M' },
@@ -497,7 +497,7 @@ export default function LandingPage() {
                         <p className="text-xs text-white/40">{stat.label}</p>
                       </div>
                     ))}
-                  </div>
+                  </div> */}
                 </motion.div>
               </div>
             </motion.div>
@@ -506,7 +506,7 @@ export default function LandingPage() {
       </motion.section>
 
       {/* Stats Section */}
-      <section className="py-20 px-6 border-y border-white/5 bg-slate-900/30">
+      {/* <section className="py-20 px-6 border-y border-white/5 bg-slate-900/30">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
             {stats.map((stat, i) => (
@@ -532,7 +532,7 @@ export default function LandingPage() {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Features Section */}
       <section ref={featuresRef} id="features" className="py-24 lg:py-32 px-6">
@@ -642,7 +642,6 @@ export default function LandingPage() {
               <div className="space-y-4">
                 {[
                   'Automatic schema detection & optimization',
-                  'Real-time sync with 200+ data sources',
                   'Natural language query interface',
                   'Predictive analytics & insights'
                 ].map((item, i) => (
@@ -834,7 +833,7 @@ export default function LandingPage() {
                   whileTap={{ scale: 0.95 }}
                   className="group px-10 py-4 bg-gradient-to-r from-amber-500 to-orange-600 rounded-2xl font-semibold shadow-xl shadow-orange-500/25 flex items-center justify-center gap-3"
                 >
-                  Start Free Trial
+                  Login
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </motion.button>
                 <motion.button
@@ -842,7 +841,7 @@ export default function LandingPage() {
                   whileTap={{ scale: 0.95 }}
                   className="px-10 py-4 border border-white/20 rounded-2xl font-semibold hover:bg-white/5 transition-all"
                 >
-                  Contact Sales
+                  Contact Us
                 </motion.button>
               </div>
             </div>
@@ -941,11 +940,10 @@ export default function LandingPage() {
                 </li>
                 <li className="flex items-center gap-2 text-white/40 text-sm">
                   <Phone className="w-4 h-4" />
-                  +1 (555) 123-4567
-                </li>
+                  +91 7007295932                </li>
                 <li className="flex items-start gap-2 text-white/40 text-sm">
                   <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  123 AI Street, San Francisco, CA 94105
+                  MNNIT Allahabad, India
                 </li>
               </ul>
             </div>
