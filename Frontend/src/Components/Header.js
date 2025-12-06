@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Layers, Menu, X } from 'lucide-react';
+import { Link } from "react-router";
 
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -15,9 +16,9 @@ export default function Header() {
   const navLinks = [
     { name: 'Features', href: '#features' },
     { name: 'Solutions', href: '#solutions' },
-    { name: 'Why MangoDesk?', href: '#pricing' },
-    { name: 'About', href: '#resources' },
-    { name: 'Our Team', href: '#enterprise' },
+    { name: 'Why MangoDesk?', href: '/why-mangodesk' },
+    { name: 'About', href: '/about' },
+    { name: 'Our Team', href: '/team' },
   ];
 
   return (
@@ -31,6 +32,7 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           {/* Logo */}
+          <Link to='/'>
           <motion.div 
             whileHover={{ scale: 1.02 }}
             className="flex items-center gap-3 cursor-pointer"
@@ -42,6 +44,7 @@ export default function Header() {
               MangoDesk
             </span>
           </motion.div>
+          </Link>
 
           {/* Desktop Nav */}
           <div className="hidden lg:flex items-center gap-8">
@@ -63,20 +66,25 @@ export default function Header() {
 
           {/* CTA Buttons */}
           <div className="hidden lg:flex items-center gap-4">
+            <Link to='/signup'>
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               className="px-5 py-2.5 text-sm font-medium text-white/80 hover:text-white transition-colors"
             >
-              Sign In
+              Sign Up
             </motion.button>
+            </Link>
+            <Link to='/login'>
             <motion.button
               whileHover={{ scale: 1.05, boxShadow: "0 20px 40px rgba(251, 146, 60, 0.3)" }}
               whileTap={{ scale: 0.95 }}
+              
               className="px-6 py-2.5 text-sm font-semibold bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40 transition-all duration-300"
-            >
-              Login
+              >
+                Login
             </motion.button>
+                </Link>
           </div>
 
           {/* Mobile Menu Button */}
