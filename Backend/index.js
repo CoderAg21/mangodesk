@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
@@ -8,7 +9,10 @@ const { test_brain } = require('./test_brain');
 const Employee = require('./models/employeeModel');
 const { parseUserIntent } = require('./intentclassifier');
 const { setGlobalDispatcher, ProxyAgent } = require("undici");
-require('dotenv').config();
+const session = require("express-session");
+const passport = require("passport");
+const passportSetup = require("./config/passport");
+
 if (process.env.PROXY_URL) {
     console.log(`Using Proxy: ${process.env.PROXY_URL}`);
     const dispatcher = new ProxyAgent(process.env.PROXY_URL);
@@ -18,9 +22,26 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+
 let isDataLoaded = false;
 
 const MONGO_URI = 'mongodb://127.0.0.1:27017/mangoDesk';
+
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {secure:false}
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+passportSetup(passport);
+//Middlewares
+
+//Logged in middleware
+
+
 
 
 const csvFilePath = path.join(__dirname, 'data', 'employees.csv');
@@ -74,11 +95,8 @@ app.get('/api/employees', (req, res) => {
 
 
 
-//-- DATABASE CONNECTION (Optional for this stage, but good for setup) --
-mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/employeeDB');
 
-
-//-----------------DHAIRYA---------------->
+//-----------------Intent analyzing route ---------------->
 app.post('/api/analyze-intent', async (req, res) => {
     try {
         // Debug Log to prove it received data
@@ -108,6 +126,50 @@ app.post('/api/analyze-intent', async (req, res) => {
     }
 });
 
+
+//------------Login and Sign up Route------------------->
+// 1. Redirect user to Google
+app.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+
+router.get(
+  "/google/callback",
+  passport.authenticate("google", {
+    // If they are NOT in the allowed list, they go here:
+    failureRedirect: "http://localhost:3000/login?error=unauthorized", 
+    
+    // If they ARE in the list, they go here:
+    successRedirect: "http://localhost:3000", 
+  })
+);
+
+//Getting current user
+app.get("/login/success", (req, res) => {
+  if (req.user) {
+    res.status(200).json({
+      success: true,
+      user: req.user,
+    });
+  } else {
+    res.status(401).json({
+      success: false,
+      message: "Not authenticated",
+    });
+  }
+});
+
+
+//  Logout
+app.get("/logout", (req, res) => {
+  req.logout((err) => {
+    if (err) return next(err);
+    res.redirect(process.env.CLIENT_URL);
+  });
+});
+
+
+app.get ('/singup',(req,res)=>{
+  app.send('Signup here')
+})
 
 const PORT = 5000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
