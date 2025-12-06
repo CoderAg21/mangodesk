@@ -1,152 +1,459 @@
-// import React from 'react'
-// import { useState } from 'react';
-// // Small icon components
-// const MenuIcon = (props) => (
-//   <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor">
-//     <line x1="3" y1="12" x2="21" y2="12" />
-//     <line x1="3" y1="6" x2="21" y2="6" />
-//     <line x1="3" y1="18" x2="21" y2="18" />
-//   </svg>
-// );
+import React, { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Send, Plus, MessageSquare, Sparkles, Zap, Lightbulb, Globe, ChevronLeft, Menu, X, Bot, User, Loader2 } from 'lucide-react';
 
-// const SendIcon = (props) => (
-//   <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor">
-//     <line x1="22" y1="2" x2="11" y2="13" />
-//     <polygon points="22 2 15 22 11 13 2 9 22 2" />
-//   </svg>
-// );
+export default function Home() {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [conversations, setConversations] = useState([]);
+  const [currentConversationId, setCurrentConversationId] = useState(null);
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
-// // LOGO
-// function Logo() {
-//   return (
-//     <div className="logo">
-//       <div className="logo-circle">G</div>
-//       <div className="logo-text">Clone</div>
-//     </div>
-//   );
-// }
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
-// // SIDEBAR
-// function Sidebar({ onNewChat }) {
-//   return (
-//     <aside className="sidebar">
-//       <Logo />
-//       <button onClick={onNewChat} className="newchat-btn">New Chat</button>
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
-//       <div className="recent-title">Recent</div>
-//       <div className="recent-list">
-//         <div className="recent-item">Trip to Kyoto</div>
-//         <div className="recent-item">Project ideas</div>
-//       </div>
-//     </aside>
-//   );
-// }
+  const suggestions = [
+    { icon: Sparkles, text: 'Summarize an article about AI', color: 'from-purple-500 to-pink-500' },
+    { icon: Lightbulb, text: 'Help me brainstorm ideas', color: 'from-amber-500 to-orange-500' },
+    { icon: Globe, text: 'Plan a trip to Japan', color: 'from-cyan-500 to-blue-500' },
+    { icon: Zap, text: 'Write a creative story', color: 'from-green-500 to-emerald-500' },
+  ];
 
-// // CHAT BUBBLE
-// function ChatBubble({ text, role }) {
-//   const isUser = role === 'user';
-//   return (
-//     <div className={isUser ? 'bubble-container user' : 'bubble-container ai'}>
-//       <div className={isUser ? 'bubble user-bubble' : 'bubble ai-bubble'}>{text}</div>
-//     </div>
-//   );
-// }
+  async function sendMessage(text) {
+    if (!text.trim() || isLoading) return;
 
-// // CHAT AREA
-// function ChatArea({ messages, onUsePrompt }) {
-//   const suggestions = [
-//     'Summarize an article about renewable energy',
-//     'Help me brainstorm side project ideas',
-//     'Plan a 7-day trip to Japan',
-//   ];
+    const userMessage = { role: 'user', text, id: Date.now() };
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+    setInput('');
+    setIsLoading(true);
 
-//   if (messages.length === 0) {
-//     return (
-//       <div className="empty-screen">
-//         <h2 className="empty-title">Hello — how can I help?</h2>
-//         <p className="empty-sub">Click a suggestion or type your message below.</p>
+    // If this is the first message of a new conversation, create a conversation
+    if (messages.length === 0 && !currentConversationId) {
+      const newConvId = Date.now();
+      const conversationTitle = text.length > 40 ? text.substring(0, 40) + '...' : text;
+      const newConversation = {
+        id: newConvId,
+        title: conversationTitle,
+        preview: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+        messages: updatedMessages
+      };
+      setConversations(prev => [newConversation, ...prev]);
+      setCurrentConversationId(newConvId);
+    }
 
-//         <div className="suggestion-grid">
-//           {suggestions.map((s) => (
-//             <button key={s} onClick={() => onUsePrompt(s)} className="suggestion-card">{s}</button>
-//           ))}
-//         </div>
-//       </div>
-//     );
-//   }
+    try {
+      const response = await fetch('http://localhost:5000/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: text }),
+      });
 
-//   return (
-//     <div className="chat-area">
-//       {messages.map((m, i) => (
-//         <ChatBubble key={i} {...m} />
-//       ))}
-//     </div>
-//   );
-// }
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
+      const data = await response.json();
+      const aiResponseText = data.response || "I apologize, but I couldn't generate a response.";
 
-// export default function Homepage() {
-//     const [messages, setMessages] = useState([]);
-//   const [input, setInput] = useState('');
+      const aiMessage = { role: 'ai', text: aiResponseText, id: Date.now() };
+      const finalMessages = [...updatedMessages, aiMessage];
+      
+      setMessages(finalMessages);
 
-//   function sendMessage(text) {
-//     if (!text.trim()) return;
+      // Update the conversation with the new message
+      if (currentConversationId) {
+        setConversations(prev => 
+          prev.map(conv => 
+            conv.id === currentConversationId 
+              ? { ...conv, messages: finalMessages, preview: aiResponseText.substring(0, 50) + (aiResponseText.length > 50 ? '...' : '') }
+              : conv
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Fetch error:', error);
+      const errorMessage = { 
+        role: 'ai', 
+        text: 'Unable to connect to the server. Please check your connection and try again.', 
+        id: Date.now(),
+        isError: true 
+      };
+      const finalMessages = [...updatedMessages, errorMessage];
+      
+      setMessages(finalMessages);
 
-//     setMessages((prev) => [...prev, { role: 'user', text }]);
-//     setInput('');
+      // Update conversation with error message
+      if (currentConversationId) {
+        setConversations(prev => 
+          prev.map(conv => 
+            conv.id === currentConversationId 
+              ? { ...conv, messages: finalMessages }
+              : conv
+          )
+        );
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
-//     // Fake AI response
-//     setTimeout(() => {
-//       setMessages((prev) => [...prev, { role: 'ai', text: `I got: "${text}" — here's a helpful reply.` }]);
-//     }, 700);
-//   }
+  function handleNewChat() {
+    setMessages([]);
+    setInput('');
+    setIsLoading(false);
+    setCurrentConversationId(null);
+    setSidebarOpen(false);
+  }
 
-//   function handleUsePrompt(prompt) {
-//     sendMessage(prompt);
-//   }
+  function loadConversation(conversationId) {
+    const conversation = conversations.find(conv => conv.id === conversationId);
+    if (conversation) {
+      setMessages(conversation.messages || []);
+      setCurrentConversationId(conversationId);
+      setSidebarOpen(false);
+    }
+  }
 
-//   function handleNewChat() {
-//     setMessages([]);
-//     setInput('');
-//   }
-//   return (
-//         <div className="app-container">
-//       <Sidebar onNewChat={handleNewChat} />
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(input);
+    }
+  };
 
-//       <div className="main">
-//         <header className="topbar">
-//           <div className="topbar-left">
-//             <button className="menu-btn"><MenuIcon className="icon" /></button>
-//             <Logo />
-//           </div>
-//           <div className="topbar-right">Simple UI Clone</div>
-//         </header>
+  return (
+    <div className="h-screen w-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex overflow-hidden">
+      {/* Ambient background effects */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-500/5 rounded-full blur-3xl" />
+      </div>
 
-//         <main className="main-chat">
-//           <ChatArea messages={messages} onUsePrompt={handleUsePrompt} />
-//         </main>
+      {/* Mobile Sidebar Overlay */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSidebarOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          />
+        )}
+      </AnimatePresence>
 
-//         <footer className="input-area">
-//           <input
-//             value={input}
-//             onChange={(e) => setInput(e.target.value)}
-//             onKeyPress={(e) => {
-//               if (e.key === 'Enter') {
-//                 sendMessage(input);
-//               }
-//             }}
-//             placeholder="Type a message..."
-//             className="chat-input"
-//           />
-//           <button
-//             onClick={() => sendMessage(input)}
-//             className="send-btn"
-//             disabled={!input.trim()}
-//           >
-//             <SendIcon className="icon" />
-//           </button>
-//         </footer>
-//       </div>
-//     </div>
-//   )
-// }
+      {/* Sidebar */}
+      <AnimatePresence>
+        {(sidebarOpen || window.innerWidth >= 1024) && (
+          <motion.aside
+            initial={{ x: -300, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -300, opacity: 0 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className={`fixed lg:relative z-50 h-full w-72 bg-slate-900/80 backdrop-blur-xl border-r border-white/5 flex flex-col ${
+              sidebarOpen ? 'block' : 'hidden lg:flex'
+            }`}
+          >
+            {/* Sidebar Header */}
+            <div className="p-4 border-b border-white/5">
+              <div className="flex items-center justify-between mb-4">
+                <motion.div 
+                  className="flex items-center gap-3"
+                  whileHover={{ scale: 1.02 }}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg shadow-purple-500/25">
+                    <Bot className="w-5 h-5 text-white" />
+                  </div>
+                  <span className="text-xl font-semibold bg-gradient-to-r from-white to-white/70 bg-clip-text text-transparent">
+                    NexusAI
+                  </span>
+                </motion.div>
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  className="lg:hidden p-2 rounded-lg hover:bg-white/5 transition-colors"
+                >
+                  <X className="w-5 h-5 text-white/60" />
+                </button>
+              </div>
+
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleNewChat}
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white font-medium shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 transition-all duration-300"
+              >
+                <Plus className="w-5 h-5" />
+                New Chat
+              </motion.button>
+            </div>
+
+            {/* Conversations List */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-1">
+              <p className="px-3 py-2 text-xs font-medium text-white/40 uppercase tracking-wider">
+                Recent Conversations
+              </p>
+              {conversations.length === 0 ? (
+                <div className="px-3 py-8 text-center">
+                  <MessageSquare className="w-8 h-8 text-white/20 mx-auto mb-2" />
+                  <p className="text-xs text-white/30">No conversations yet</p>
+                  <p className="text-xs text-white/20 mt-1">Start chatting to see your history</p>
+                </div>
+              ) : (
+                conversations.map((conv, index) => (
+                  <motion.button
+                    key={conv.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    whileHover={{ x: 4 }}
+                    onClick={() => loadConversation(conv.id)}
+                    className={`w-full text-left p-3 rounded-xl transition-all duration-200 group ${
+                      currentConversationId === conv.id 
+                        ? 'bg-violet-600/20 border border-violet-500/30' 
+                        : 'hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                        currentConversationId === conv.id
+                          ? 'bg-violet-500/30'
+                          : 'bg-white/5 group-hover:bg-white/10'
+                      }`}>
+                        <MessageSquare className={`w-4 h-4 ${
+                          currentConversationId === conv.id 
+                            ? 'text-violet-300' 
+                            : 'text-white/40'
+                        }`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium truncate ${
+                          currentConversationId === conv.id 
+                            ? 'text-white' 
+                            : 'text-white/80'
+                        }`}>{conv.title}</p>
+                        <p className="text-xs text-white/30 truncate">{conv.preview}</p>
+                      </div>
+                    </div>
+                  </motion.button>
+                ))
+              )}
+            </div>
+
+            {/* Sidebar Footer */}
+            <div className="p-4 border-t border-white/5">
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center">
+                  <span className="text-sm font-semibold text-white">U</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white/80">User</p>
+                  <p className="text-xs text-white/40">Free Plan</p>
+                </div>
+              </div>
+            </div>
+          </motion.aside>
+        )}
+      </AnimatePresence>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col relative z-10">
+        {/* Top Bar */}
+        <header className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-slate-900/50 backdrop-blur-xl">
+          <div className="flex items-center gap-3">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden p-2 rounded-lg hover:bg-white/5 transition-colors"
+            >
+              <Menu className="w-5 h-5 text-white/60" />
+            </motion.button>
+            <div className="lg:hidden flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+                <Bot className="w-4 h-4 text-white" />
+              </div>
+              <span className="font-semibold text-white">NexusAI</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs px-3 py-1.5 rounded-full bg-gradient-to-r from-violet-500/20 to-purple-500/20 text-violet-300 font-medium border border-violet-500/20">
+              GPT-4 Turbo
+            </span>
+          </div>
+        </header>
+
+        {/* Chat Area */}
+        <main className="flex-1 overflow-y-auto">
+          {messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center p-6">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+                className="text-center max-w-2xl mx-auto"
+              >
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', delay: 0.2 }}
+                  className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-purple-500/30"
+                >
+                  <Sparkles className="w-10 h-10 text-white" />
+                </motion.div>
+                <h1 className="text-3xl md:text-4xl font-bold mb-3 bg-gradient-to-r from-white via-white to-white/60 bg-clip-text text-transparent">
+                  How can I assist you today?
+                </h1>
+                <p className="text-white/40 text-lg mb-10">
+                  Choose a suggestion or type your own message below
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto">
+                  {suggestions.map((suggestion, index) => (
+                    <motion.button
+                      key={index}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 + index * 0.1 }}
+                      whileHover={{ scale: 1.03, y: -2 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => sendMessage(suggestion.text)}
+                      className="group relative p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-white/20 transition-all duration-300 text-left overflow-hidden"
+                    >
+                      <div className={`absolute inset-0 bg-gradient-to-br ${suggestion.color} opacity-0 group-hover:opacity-10 transition-opacity duration-300`} />
+                      <div className="relative flex items-start gap-3">
+                        <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${suggestion.color} flex items-center justify-center shadow-lg`}>
+                          <suggestion.icon className="w-5 h-5 text-white" />
+                        </div>
+                        <p className="flex-1 text-sm text-white/70 group-hover:text-white/90 transition-colors leading-relaxed">
+                          {suggestion.text}
+                        </p>
+                      </div>
+                    </motion.button>
+                  ))}
+                </div>
+              </motion.div>
+            </div>
+          ) : (
+            <div className="max-w-3xl mx-auto p-4 space-y-6">
+              <AnimatePresence mode="popLayout">
+                {messages.map((message) => (
+                  <motion.div
+                    key={message.id}
+                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                    className={`flex gap-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    {message.role === 'ai' && (
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-purple-500/25">
+                        <Bot className="w-5 h-5 text-white" />
+                      </div>
+                    )}
+                    <div
+                      className={`max-w-[80%] md:max-w-[70%] rounded-2xl px-5 py-3.5 ${
+                        message.role === 'user'
+                          ? 'bg-gradient-to-br from-violet-600 to-purple-600 text-white shadow-lg shadow-purple-500/20'
+                          : message.isError
+                          ? 'bg-red-500/10 border border-red-500/20 text-red-300'
+                          : 'bg-white/5 border border-white/10 text-white/90'
+                      }`}
+                    >
+                      <p className="text-sm md:text-base leading-relaxed whitespace-pre-wrap">
+                        {message.text}
+                      </p>
+                    </div>
+                    {message.role === 'user' && (
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-cyan-500/25">
+                        <User className="w-5 h-5 text-white" />
+                      </div>
+                    )}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+
+              {/* Loading Indicator */}
+              <AnimatePresence>
+                {isLoading && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="flex gap-4"
+                  >
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-purple-500/25">
+                      <Bot className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="bg-white/5 border border-white/10 rounded-2xl px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                        >
+                          <Loader2 className="w-4 h-4 text-violet-400" />
+                        </motion.div>
+                        <span className="text-sm text-white/50">Thinking...</span>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </main>
+
+        {/* Input Area */}
+        <footer className="p-4 border-t border-white/5 bg-slate-900/50 backdrop-blur-xl">
+          <div className="max-w-3xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="relative flex items-end gap-3 p-2 rounded-2xl bg-white/5 border border-white/10 focus-within:border-violet-500/50 focus-within:bg-white/[0.07] transition-all duration-300"
+            >
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyPress}
+                placeholder="Type your message..."
+                rows={1}
+                className="flex-1 bg-transparent text-white placeholder-white/30 text-sm md:text-base px-3 py-2 resize-none outline-none max-h-32 min-h-[44px]"
+                style={{ scrollbarWidth: 'none' }}
+              />
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => sendMessage(input)}
+                disabled={!input.trim() || isLoading}
+                className={`p-3 rounded-xl transition-all duration-300 ${
+                  input.trim() && !isLoading
+                    ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40'
+                    : 'bg-white/5 text-white/20 cursor-not-allowed'
+                }`}
+              >
+                {isLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Send className="w-5 h-5" />
+                )}
+              </motion.button>
+            </motion.div>
+            <p className="text-center text-xs text-white/20 mt-3">
+              NexusAI can make mistakes. Consider checking important information.
+            </p>
+          </div>
+        </footer>
+      </div>
+    </div>
+  );
+}
