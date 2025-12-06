@@ -3,7 +3,7 @@ require('dotenv').config();
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// 1. DEFINE THE SYSTEM PROMPT ("THE BRAIN")
+// DEFINING THE SYSTEM PROMPT 
 const SYSTEM_PROMPT = `
 You are a Database Intent Classifier. Your job is to translate natural language user prompts into structured JSON commands for a MongoDB Employee Database.
 
@@ -38,14 +38,14 @@ You are a Database Intent Classifier. Your job is to translate natural language 
 }
 `;
 
-// 2. CONFIGURE THE MODEL
+// CONFIGURING THE MODEL
 const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
     systemInstruction: SYSTEM_PROMPT,
     generationConfig: { responseMimeType: "application/json" }
 });
 
-// 3. EXPORT THE FUNCTION
+// EXPORTING THE FUNCTION
 async function parseUserIntent(userPrompt) {
     try {
         const result = await model.generateContent(userPrompt);

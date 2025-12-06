@@ -11,7 +11,6 @@ const MONGO_URL = "mongodb://127.0.0.1:27017/mangoDesk";
 main()
   .then(() => {
     console.log("Mongodb connected");
-    // FIX 3: Run initDB only AFTER the connection is successful
     return initDB(); 
   })
   .catch(err => {
