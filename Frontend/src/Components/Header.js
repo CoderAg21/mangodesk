@@ -16,9 +16,9 @@ export default function Header() {
   const navLinks = [
     { name: 'Features', href: '#features' },
     { name: 'Solutions', href: '#solutions' },
-    { name: 'Why MangoDesk?', href: '#pricing' },
-    { name: 'About', href: '#resources' },
-    { name: 'Our Team', href: '#enterprise' },
+    { name: 'Why MangoDesk?', href: '/why-mangodesk' },
+    { name: 'About', href: '/about' },
+    { name: 'Our Team', href: '/team' },
   ];
 
   return (

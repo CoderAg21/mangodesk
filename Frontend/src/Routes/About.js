@@ -160,51 +160,110 @@ export default function About() {
   
 
       {/* Team Section */}
-      <section className="py-32 px-6 bg-gradient-to-b from-slate-900/50 to-slate-950">
-        <div className="max-w-7xl mx-auto">
-          <motion.div 
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-4xl lg:text-6xl font-bold mb-6">
-              Meet the <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-rose-500">Visionaries</span>
-            </h2>
-            <p className="text-white/50 max-w-2xl mx-auto text-lg">
-              A diverse team of neuroscientists, data engineers, and UI obsessives working together to redefine human-computer interaction.
-            </p>
-          </motion.div>
+ <section className="py-32 px-6 bg-gradient-to-b from-slate-900/50 to-slate-950">
+  <div className="max-w-7xl mx-auto">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      className="text-center mb-16"
+    >
+      <span className="inline-block px-4 py-1.5 rounded-full bg-slate-800 border border-white/10 text-white/60 text-sm font-mono font-medium mb-6">
+        Commit. Push. Deploy.
+      </span>
+      <h2 className="text-4xl lg:text-6xl font-bold mb-6">
+        The <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">Core Team</span>
+      </h2>
+      <p className="text-white/50 max-w-2xl mx-auto text-lg">
+        We are a squad of passionate developers building the tools we wish we had. 
+        No corporate fluff—just clean code and shipping features.
+      </p>
+    </motion.div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {/* Placeholder images from Unsplash */}
-            <TeamMember 
-              name="Alex Rivera" 
-              role="Founder & CEO" 
-              image="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&auto=format&fit=crop&q=60"
-              delay={0}
+    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+      {[
+        {
+          name: "Abhay Agrahari",
+          role: "Web Developer",
+          githubUser: "coderAg21",
+          linkedin: "#",
+          instagram: "#",
+          gradient: "from-amber-400 to-orange-600"
+        },
+        {
+          name: "Dhairya Gupta",
+          role: "Web Developer",
+          githubUser: "dhairya0910",
+          linkedin: "#",
+          instagram: "#",
+          gradient: "from-purple-400 to-pink-600"
+        },
+        {
+          name: "Anshu Raj",
+          role: "Web Developer",
+          githubUser: "anoshum",
+          linkedin: "#",
+          instagram: "#",
+          gradient: "from-cyan-400 to-blue-600"
+        },
+        {
+          name: "Aviral Tiwari",
+          role: "Web Developer",
+          githubUser: "Aviral580",
+          linkedin: "#",
+          instagram: "#",
+          gradient: "from-emerald-400 to-green-600"
+        }
+      ].map((member, i) => (
+        <motion.div
+          key={member.name}
+          initial={{ opacity: 0, scale: 0.9 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+          transition={{ delay: i * 0.1, duration: 0.5 }}
+          whileHover={{ y: -10 }}
+          className="group relative"
+        >
+          {/* Dynamic Glow Effect based on member's color */}
+          <div className={`absolute inset-0 bg-gradient-to-b ${member.gradient} rounded-3xl opacity-0 group-hover:opacity-20 blur-xl transition-opacity duration-500`} />
+          
+          <div className="relative overflow-hidden rounded-3xl aspect-[3/4] mb-4 border border-white/5 group-hover:border-white/20 transition-colors bg-slate-900">
+            {/* Fetching Image directly from GitHub */}
+            <img 
+              src={`https://github.com/${member.githubUser}.png`}
+              alt={member.name}
+              className="object-cover w-full h-full grayscale group-hover:grayscale-0 transition-all duration-700 scale-100 group-hover:scale-110"
             />
-            <TeamMember 
-              name="Sarah Chen" 
-              role="CTO & AI Lead" 
-              image="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800&auto=format&fit=crop&q=60"
-              delay={0.1}
-            />
-            <TeamMember 
-              name="Marcus Johnson" 
-              role="Head of Product" 
-              image="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=800&auto=format&fit=crop&q=60"
-              delay={0.2}
-            />
-            <TeamMember 
-              name="Elena Vasquez" 
-              role="VP of Design" 
-              image="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=800&auto=format&fit=crop&q=60"
-              delay={0.3}
-            />
+            
+            {/* Social Overlay */}
+            <div className="absolute inset-x-0 bottom-0 p-6 translate-y-full group-hover:translate-y-0 transition-transform duration-500 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent">
+              <div className="flex gap-3 justify-center">
+                <a href={`https://github.com/${member.githubUser}`} target="_blank" rel="noreferrer" className="p-2 rounded-full bg-white/10 hover:bg-white/20 hover:text-white transition-colors text-white/70">
+                  <Github className="w-5 h-5" />
+                </a>
+                <a href={member.linkedin} className="p-2 rounded-full bg-white/10 hover:bg-white/20 hover:text-white transition-colors text-white/70">
+                  <Linkedin className="w-5 h-5" />
+                </a>
+                {/* Replaced Twitter with Instagram per your data */}
+                <a href={member.instagram} className="p-2 rounded-full bg-white/10 hover:bg-white/20 hover:text-white transition-colors text-white/70">
+                   {/* Using a generic globe or camera icon if Lucide doesn't have Instagram, or stick to Lucide's Camera */}
+                   <Globe className="w-5 h-5" />
+                </a>
+              </div>
+            </div>
           </div>
-        </div>
-      </section>
+          
+          <div className="text-center group-hover:transform group-hover:translate-y-[-4px] transition-transform duration-300">
+            <h3 className="text-xl font-bold text-white mb-1">{member.name}</h3>
+            <span className={`text-sm font-medium bg-gradient-to-r ${member.gradient} bg-clip-text text-transparent`}>
+              {member.role}
+            </span>
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  </div>
+</section>
 
       {/* Values / Culture Grid */}
       <section className="py-32 px-6">
