@@ -21,10 +21,10 @@ export default function Home() {
   }, [messages]);
 
   const suggestions = [
-    { icon: Sparkles, text: 'Summarize an article about AI', color: 'from-purple-500 to-pink-500' },
-    { icon: Lightbulb, text: 'Help me brainstorm ideas', color: 'from-amber-500 to-orange-500' },
-    { icon: Globe, text: 'Plan a trip to Japan', color: 'from-cyan-500 to-blue-500' },
-    { icon: Zap, text: 'Write a creative story', color: 'from-green-500 to-emerald-500' },
+    { icon: Sparkles, text: 'Summarize an article about AI', color: 'from-amber-500 to-orange-500' },
+    { icon: Lightbulb, text: 'Help me brainstorm ideas', color: 'from-yellow-400 to-amber-500' },
+    { icon: Globe, text: 'Plan a trip to Japan', color: 'from-orange-500 to-red-500' },
+    { icon: Zap, text: 'Write a creative story', color: 'from-amber-400 to-orange-400' },
   ];
 
   async function sendMessage(text) {
@@ -129,12 +129,12 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen w-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex overflow-hidden">
-      {/* Ambient background effects */}
+    <div className="h-screen w-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex overflow-hidden text-white">
+      {/* Ambient background effects (Matched to Team Page) */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-amber-500/5 rounded-full blur-[120px]" />
+        <div className="absolute bottom-0 right-1/4 w-[600px] h-[600px] bg-orange-500/5 rounded-full blur-[100px]" />
+        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 brightness-100 contrast-150 mix-blend-overlay"></div>
       </div>
 
       {/* Mobile Sidebar Overlay */}
@@ -152,7 +152,7 @@ export default function Home() {
 
       {/* Sidebar */}
       <AnimatePresence>
-        {(sidebarOpen || window.innerWidth >= 1024) && (
+        {(sidebarOpen || (typeof window !== 'undefined' && window.innerWidth >= 1024)) && (
           <motion.aside
             initial={{ x: -300, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
@@ -169,10 +169,10 @@ export default function Home() {
                   className="flex items-center gap-3"
                   whileHover={{ scale: 1.02 }}
                 >
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg shadow-purple-500/25">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 via-orange-500 to-amber-600 flex items-center justify-center shadow-lg shadow-orange-500/20">
                     <Bot className="w-5 h-5 text-white" />
                   </div>
-                  <span className="text-xl font-semibold bg-gradient-to-r from-white to-white/70 bg-clip-text text-transparent">
+                  <span className="text-xl font-semibold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
                     NexusAI
                   </span>
                 </motion.div>
@@ -188,7 +188,7 @@ export default function Home() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleNewChat}
-                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white font-medium shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 transition-all duration-300"
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 text-white font-medium shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40 transition-all duration-300"
               >
                 <Plus className="w-5 h-5" />
                 New Chat
@@ -217,19 +217,19 @@ export default function Home() {
                     onClick={() => loadConversation(conv.id)}
                     className={`w-full text-left p-3 rounded-xl transition-all duration-200 group ${
                       currentConversationId === conv.id 
-                        ? 'bg-violet-600/20 border border-violet-500/30' 
+                        ? 'bg-amber-500/10 border border-amber-500/20' 
                         : 'hover:bg-white/5'
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
                         currentConversationId === conv.id
-                          ? 'bg-violet-500/30'
+                          ? 'bg-amber-500/20'
                           : 'bg-white/5 group-hover:bg-white/10'
                       }`}>
                         <MessageSquare className={`w-4 h-4 ${
                           currentConversationId === conv.id 
-                            ? 'text-violet-300' 
+                            ? 'text-amber-400' 
                             : 'text-white/40'
                         }`} />
                       </div>
@@ -250,7 +250,7 @@ export default function Home() {
             {/* Sidebar Footer */}
             <div className="p-4 border-t border-white/5">
               <div className="flex items-center gap-3 p-3 rounded-xl bg-white/5">
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-700 to-slate-600 flex items-center justify-center border border-white/10">
                   <span className="text-sm font-semibold text-white">U</span>
                 </div>
                 <div className="flex-1 min-w-0">
@@ -277,14 +277,11 @@ export default function Home() {
               <Menu className="w-5 h-5 text-white/60" />
             </motion.button>
             <div className="lg:hidden flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
                 <Bot className="w-4 h-4 text-white" />
               </div>
               <span className="font-semibold text-white">NexusAI</span>
             </div>
-          </div>
-          <div className="flex items-center gap-2 m-4">
-            
           </div>
         </header>
 
@@ -302,7 +299,7 @@ export default function Home() {
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ type: 'spring', delay: 0.2 }}
-                  className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-purple-500/30"
+                  className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-amber-400 via-orange-500 to-amber-600 flex items-center justify-center shadow-2xl shadow-orange-500/20"
                 >
                   <Sparkles className="w-10 h-10 text-white" />
                 </motion.div>
@@ -323,7 +320,7 @@ export default function Home() {
                       whileHover={{ scale: 1.03, y: -2 }}
                       whileTap={{ scale: 0.98 }}
                       onClick={() => sendMessage(suggestion.text)}
-                      className="group relative p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-white/20 transition-all duration-300 text-left overflow-hidden"
+                      className="group relative p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-amber-500/30 transition-all duration-300 text-left overflow-hidden"
                     >
                       <div className={`absolute inset-0 bg-gradient-to-br ${suggestion.color} opacity-0 group-hover:opacity-10 transition-opacity duration-300`} />
                       <div className="relative flex items-start gap-3">
@@ -352,14 +349,14 @@ export default function Home() {
                     className={`flex gap-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     {message.role === 'ai' && (
-                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-purple-500/25">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-orange-500/20">
                         <Bot className="w-5 h-5 text-white" />
                       </div>
                     )}
                     <div
                       className={`max-w-[80%] md:max-w-[70%] rounded-2xl px-5 py-3.5 ${
                         message.role === 'user'
-                          ? 'bg-gradient-to-br from-violet-600 to-purple-600 text-white shadow-lg shadow-purple-500/20'
+                          ? 'bg-gradient-to-br from-amber-600 to-orange-600 text-white shadow-lg shadow-orange-500/20'
                           : message.isError
                           ? 'bg-red-500/10 border border-red-500/20 text-red-300'
                           : 'bg-white/5 border border-white/10 text-white/90'
@@ -370,7 +367,7 @@ export default function Home() {
                       </p>
                     </div>
                     {message.role === 'user' && (
-                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-cyan-500/25">
+                      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-700 to-slate-600 border border-white/10 flex items-center justify-center flex-shrink-0 shadow-lg">
                         <User className="w-5 h-5 text-white" />
                       </div>
                     )}
@@ -387,7 +384,7 @@ export default function Home() {
                     exit={{ opacity: 0, y: -10 }}
                     className="flex gap-4"
                   >
-                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-purple-500/25">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-orange-500/20">
                       <Bot className="w-5 h-5 text-white" />
                     </div>
                     <div className="bg-white/5 border border-white/10 rounded-2xl px-5 py-4">
@@ -396,7 +393,7 @@ export default function Home() {
                           animate={{ rotate: 360 }}
                           transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
                         >
-                          <Loader2 className="w-4 h-4 text-violet-400" />
+                          <Loader2 className="w-4 h-4 text-amber-400" />
                         </motion.div>
                         <span className="text-sm text-white/50">Thinking...</span>
                       </div>
@@ -416,7 +413,7 @@ export default function Home() {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative flex items-end gap-3 p-2 rounded-2xl bg-white/5 border border-white/10 focus-within:border-violet-500/50 focus-within:bg-white/[0.07] transition-all duration-300"
+              className="relative flex items-end gap-3 p-2 rounded-2xl bg-white/5 border border-white/10 focus-within:border-amber-500/50 focus-within:bg-white/[0.07] transition-all duration-300"
             >
               <textarea
                 ref={inputRef}
@@ -435,7 +432,7 @@ export default function Home() {
                 disabled={!input.trim() || isLoading}
                 className={`p-3 rounded-xl transition-all duration-300 ${
                   input.trim() && !isLoading
-                    ? 'bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40'
+                    ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40'
                     : 'bg-white/5 text-white/20 cursor-not-allowed'
                 }`}
               >
