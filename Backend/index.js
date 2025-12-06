@@ -140,7 +140,7 @@ app.post('/api/analyze-intent', async (req, res) => {
         console.error("Server Error:", error);
         res.status(500).json({ error: "Internal Server Error", details: error.message });
     }
-});
+});;
 
 // 3. Auth Routes (Google)
 app.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
