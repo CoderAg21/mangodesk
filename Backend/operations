@@ -1,0 +1,77 @@
+Basic Read (Find)
+Basic Write (Create)
+Basic Update
+Basic Delete
+Batch Operations	Ability to handle a single prompt requesting the insertion or deletion of multiple employees. (e.g., insertMany, deleteMany).
+Advanced Aggregation	The agent can now process natural language requests for calculated metrics (e.g., AVG, SUM, Median, COUNT, and grouping logic)
+Complex/Multi-Step Commands	The agent executes a sequence of operations from a single prompt (e.g., "Update A THEN Aggregate B"). Includes support for relative updates ($mul, $inc).
+Conversational Context	The agent maintains session state, remembering the filter or result set of the last query to answer follow-up questions about "them" or "those employees".
+Ambiguity Handling	The agent detects vague or misspelled column names (e.g., "wage") and, instead of crashing, returns a specific Clarification Message with suggested fields.
+
+
+
+
+# Demonstration:
+echo "--- A. INITIAL CAPABILITY: Basic Read/Find ---"
+echo "Goal: Read all employees in the 'Design' department."
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Find all employees in the \u0027Design\u0027 department.", "sessionId": "showcase-session"}' \
+  http://localhost:5000/api/brain/command
+echo -e "\n------------------------------------------------------------\n"
+
+echo "--- B. NEW FEATURE 1: BATCH WRITE ---"
+echo "Goal: Insert two new employees (Batch Operation) in a single query."
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Add a new employee named Chris with a salary of 100000 and department \u0027Engineering\u0027, and another employee named Alex with a salary of 120000 and department \u0027Design\u0027.", "sessionId": "showcase-session"}' \
+  http://localhost:5000/api/brain/command
+echo -e "\n------------------------------------------------------------\n"
+
+echo "--- C. NEW FEATURE 2: ADVANCED AGGREGATION ---"
+echo "Goal: Ask for a complex Median calculation (demonstrates advanced aggregation)."
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "What is the median satisfaction score?", "sessionId": "showcase-session"}' \
+  http://localhost:5000/api/brain/command
+echo -e "\n------------------------------------------------------------\n"
+
+echo "--- D. NEW FEATURE 3: COMPLEX MULTI-STEP COMMAND ---"
+echo "Goal: Perform an UPDATE ($mul for 15% increase) and then an AGGREGATE in one sequential command."
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Increase the salary of all employees in the \u0027Engineering\u0027 department by 15%, and then tell me the new average salary for only the Engineering department.", "sessionId": "showcase-session"}' \
+  http://localhost:5000/api/brain/command
+echo -e "\n------------------------------------------------------------\n"
+
+echo "--- E. NEW FEATURE 4: CONTEXT (Step 1: Set Filter) ---"
+echo "Goal: Filter employees in the 'Design' department to set the context."
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Find all employees in the \u0027Design\u0027 department.", "sessionId": "showcase-context-check"}' \
+  http://localhost:5000/api/brain/command
+echo -e "\n------------------------------------------------------------\n"
+
+echo "--- F. NEW FEATURE 4: CONTEXT (Step 2: Use Filter) ---"
+echo "Goal: Ask a question about 'those employees' using the stored 'Design' filter."
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "What is the average salary of those employees?", "sessionId": "showcase-context-check"}' \
+  http://localhost:5000/api/brain/command
+echo -e "\n------------------------------------------------------------\n"
+
+echo "--- G. NEW FEATURE 5: AMBIGUITY HANDLING ---"
+echo "Goal: Use the ambiguous term 'wage' to show the agent returns a Clarification Needed message."
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "What is the average wage of employees?", "sessionId": "showcase-session"}' \
+  http://localhost:5000/api/brain/command
+echo -e "\n------------------------------------------------------------\n"
+
+echo "--- H. INITIAL CAPABILITY: Basic Delete ---"
+echo "Goal: Delete the two employees added in step B."
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Delete the employees named Chris and Alex.", "sessionId": "showcase-session"}' \
+  http://localhost:5000/api/brain/command
+echo -e "\n------------------------------------------------------------\n"
