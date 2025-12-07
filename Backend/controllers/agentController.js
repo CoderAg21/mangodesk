@@ -1,45 +1,65 @@
-// Backend/controllers/agentController.js - UPDATED for Sequential/Batch Processing
+// Backend/controllers/agentController.js - UPDATED for Ambiguity/Error Handling
 
 const { classifyIntent } = require('../services/intentClassifier');
 const { translateIntent } = require('../services/intentToMongo');
 const { executeQuery } = require('../services/queryEngine');
 const Employee = require('../models/Employee');
 
-// Store results from previous successful commands for context (Placeholder for next step)
-const CONTEXT_STORE = {}; 
+// Store the last filter/query used for each session to provide context to the AI.
+// Key: sessionId, Value: JSON object of the last executed filter or a summary of results.
+const SESSION_CONTEXT = {}; 
 
 /**
  * FULL AI PIPELINE:
- * 1. Receive User Prompt
+ * 1. Receive User Prompt AND Session Context
  * 2. AI Classifies Intent (Gemini) -> Returns ARRAY of Intent Objects
  * 3. Translator Converts to MongoDB Syntax -> Returns ARRAY of Execution Operations
  * 4. Engine Executes Query on Database (Sequential Execution)
- * 5. Return ALL Results
+ * 5. Update Session Context with results/filters for the next command.
+ * 6. Return ALL Results
  */
 const handleAgentCommand = async (req, res) => {
-    const { prompt, sessionId = 'default-session' } = req.body; // Use a default session ID if none is provided
+    // CRITICAL CHANGE: Default sessionId ensures context works even if frontend is simple
+    const { prompt, sessionId = 'default-session' } = req.body; 
 
     if (!prompt) {
         return res.status(400).json({ error: "No prompt provided." });
     }
 
     try {
-        console.log(`🧠 Processing: "${prompt}"`);
+        console.log(`🧠 Processing: "${prompt}" for Session: ${sessionId}`);
 
-        // STEP 1: Classify (The AI now returns an array of 1 or more intent objects)
-        const intentResults = await classifyIntent(prompt); 
+        // 1. Prepare Context for the AI
+        const context = SESSION_CONTEXT[sessionId] || {};
+        const contextString = JSON.stringify(context);
         
-        // Basic check for classification error
-        if (intentResults[0].intent === "ERROR") {
-             return res.status(500).json(intentResults[0]);
+        // 2. Classify: Pass the context string along with the prompt
+        const intentResults = await classifyIntent(prompt, contextString); 
+        
+        // --- FEATURE 3: AMBIGUITY CHECK ---
+        const firstIntent = intentResults[0];
+        if (firstIntent.intent === "ERROR") {
+             // Handle core AI classification/parsing errors
+             return res.status(500).json(firstIntent);
         }
+        if (firstIntent.intent === "AMBIGUOUS_QUERY") {
+             // If ambiguous, return the AI's suggested clarification and stop execution
+             console.log("⚠️ Ambiguous Query Detected. Returning AI clarification.");
+             return res.json({
+                status: "Clarification Needed",
+                message: "I found an ambiguous term. Did you mean one of these?",
+                details: firstIntent.suggestions,
+                meta: { originalPrompt: prompt }
+             });
+        }
+        // ---------------------------------
         
-        // STEP 2: Translate - Returns an array of execution operations
+        // 3. Translate - Returns an array of execution operations
         const dbOperations = translateIntent(intentResults); 
         
         const finalResults = [];
 
-        // STEP 3: Execute (Sequential Execution of all operations)
+        // 4. Execute (Sequential Execution of all operations)
         for (const operation of dbOperations) {
             if (operation.action === 'unknown') {
                 finalResults.push({ status: "Unprocessed", message: operation.reason });
@@ -53,25 +73,34 @@ const handleAgentCommand = async (req, res) => {
                 filterOrPipelineUsed: operation.filter || operation.pipeline || operation.data 
             });
             
-            // Context placeholder: We won't fully implement context until the next step
+            // 5. Update Context: Only store filters/pipelines for READ/AGGREGATE for re-use
             if (operation.action === 'find' || operation.action === 'aggregate') {
-                 // Store the retrieved data for subsequent commands in the same session
-                 CONTEXT_STORE[sessionId] = dataResult; 
+                // Store the filter/pipeline so the AI can reference 'these' employees later
+                SESSION_CONTEXT[sessionId] = { 
+                    lastAction: operation.action,
+                    lastFilter: operation.filter || operation.pipeline,
+                    resultCount: Array.isArray(dataResult) ? dataResult.length : 0
+                };
+            } else if (operation.action === 'updateMany' || operation.action === 'deleteMany') {
+                 // Clear context after a major WRITE/DELETE action
+                 delete SESSION_CONTEXT[sessionId]; 
             }
         }
 
-        // STEP 4: Respond
+        // 6. Respond
         return res.json({
             status: "Success",
             results: finalResults,
             meta: {
                 originalPrompt: prompt,
-                aiInterpretation: intentResults
+                aiInterpretation: intentResults,
+                contextUsed: context // Show the user what context was used
             }
         });
 
     } catch (error) {
         console.error("❌ Agent Error:", error);
+        // Ensure error details are visible
         return res.status(500).json({ error: "Agent failed to process request.", details: error.message });
     }
 };
