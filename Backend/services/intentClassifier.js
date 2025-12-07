@@ -1,12 +1,12 @@
+// Backend/services/intentClassifier.js - UPDATED for Batch & Aggregation (CLEANED)
+
 require('dotenv').config();
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const fetch = require('node-fetch'); // Keeping this as per your project setup
+const fetch = require('node-fetch');
 
-// --- Corrected Initialization ---
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // 1. DATASET KNOWLEDGE BASE
-// We explicitly tell the AI your exact CSV column names here.
 const EMPLOYEE_SCHEMA = `
 CONTEXT: You are managing an Employee Database.
 COLLECTION NAME: 'employees'
@@ -18,66 +18,85 @@ AVAILABLE FIELDS (Exact Column Names):
 - METRICS: performance_score (1-5 scale), promotion_count, project_count
 - SALES DATA: deals_closed, avg_deal_size_usd, client_revenue_usd
 - WORK STYLE: customer_satisfaction, work_hours_per_week, remote_percentage
+- SYNTHETIC: age, gender, education, experience_years
 `;
 
-// 2. STRICT RULES FOR THE AI
+// 2. STRICT RULES FOR THE AI - CRITICALLY UPDATED
 const SYSTEM_PROMPT = `
-You are a Database Intent Classifier.
+You are a highly advanced Conversational Database Agent.
 ${EMPLOYEE_SCHEMA}
 
 YOUR JOB:
 1. Analyze the user prompt.
-2. Return a JSON object with the user's intent and valid MongoDB parameters.
+2. Determine if the request requires one operation or a sequence of operations (e.g., Delete THEN Read).
+3. Determine if the request is a standard CRUD or an **AGGREGATION** (e.g., AVG, SUM, COUNT, GROUP BY).
+4. Return a **JSON ARRAY** of operations.
 
 RULES:
-- **Keys:** Use ONLY these keys in your JSON:
-  - "intent": One of [READ_DB, WRITE_DB, UPDATE_DB, DELETE_DB]
-  - "collection": Always "employees" (unless user explicitly asks for 'users' system)
+- **Output Format:** You MUST return a **JSON ARRAY** containing one or more operation objects.
+- **Intent Types:** Intents are one of: [READ_DB, WRITE_DB, UPDATE_DB, DELETE_DB, **AGGREGATE_DB**].
+- **Batching:** If a WRITE_DB request involves multiple items, the 'data' field MUST be an **ARRAY of objects**.
+
+- **Keys (for all intents):**
+  - "intent": (One of the types above)
+  - "collection": Always "employees"
+- **Keys (for CRUD):**
   - "query": The filter criteria (The "Who" or "Which")
-  - "data": The data to be inserted or updated (The "What")
+  - "data": The data to be inserted/updated (The "What"). Use ARRAY for batch inserts.
+- **Keys (for AGGREGATE):**
+  - "pipeline": An ARRAY of MongoDB Aggregation Stages.
 
-- **Mapping:**
-  - If user says "salary" or "income" -> map to 'salary_usd'
-  - If user says "rating" or "score" -> map to 'performance_score'
-  - If user says "remote" -> map to 'remote_percentage'
-  - If user says "revenue" -> map to 'client_revenue_usd'
-  - If user says "Hire", "Add", or "Create" -> map to intent 'WRITE_DB'
-  - If user says "Fire", "Remove", or "Delete" -> map to intent 'DELETE_DB'
+- **Relative Updates/Multiplication:** - For simple increments (e.g., "increase by 5000"), use the **$inc** operator in the 'data' field: \`{"$inc": {"salary_usd": 5000}}\`.
+  - For percentage increases (e.g., "increase salary by 15%"), use the **$mul** operator in the 'data' field. The AI must calculate the multiplier (e.g., 1.15): \`{"$mul": {"salary_usd": 1.15}}\`.
 
-- **Global Wipe:** If the user explicitly asks to 'Delete ALL employees', include the key "confirm_global_wipe": true in the query object. This is the only exception to the rule below.
+- **Aggregation:** If the prompt asks for metrics (AVG, SUM, COUNT), use the **"AGGREGATE_DB"** intent and provide the full MongoDB **"pipeline"**.
+- **Global Wipe:** If the user explicitly asks to 'Delete ALL employees', include the key "confirm_global_wipe": true in the query object.
 
-- **Format:**
-  - Return RAW JSON only. Do not wrap in markdown like \`\`\`json.
+- **Format:** Return RAW JSON Array only. Do not wrap in markdown like \`\`\`json.
 
 EXAMPLES:
-Input: "Find everyone in Sales with a rating over 4"
-Output: { "intent": "READ_DB", "collection": "employees", "query": { "department": "Sales", "performance_score": { "$gt": 4 } } }
+Input: "Find all managers, then increase their salary by 5% and give me the new average salary for them."
+Output: 
+[
+  { "intent": "UPDATE_DB", "collection": "employees", "query": { "role": "Manager" }, "data": { "$mul": { "salary_usd": 1.05 } } },
+  { "intent": "AGGREGATE_DB", "collection": "employees", "pipeline": [ { "$match": { "role": "Manager" } }, { "$group": { "_id": null, "avg_salary": { "$avg": "$salary_usd" } } } ] }
+]
 
-Input: "Update John Doe's salary to 80,000"
-Output: { "intent": "UPDATE_DB", "collection": "employees", "query": { "name": "John Doe" }, "data": { "salary_usd": 80000 } }
+Input: "Add Jane Smith (Sales, $70k) and Tom Brown (HR, $60k)."
+Output:
+[
+  { 
+    "intent": "WRITE_DB", 
+    "collection": "employees", 
+    "data": [
+      { "name": "Jane Smith", "department": "Sales", "salary_usd": 70000 },
+      { "name": "Tom Brown", "department": "HR", "salary_usd": 60000 }
+    ]
+  }
+]
 `;
 
 async function classifyIntent(userPrompt) {
-  try {
-    const model = genAI.getGenerativeModel({ 
-        // --- Corrected Model Name ---
-        model: "gemini-2.5-flash", 
-        systemInstruction: SYSTEM_PROMPT 
-    }, { fetch: fetch });
+    try {
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.5-flash", 
+            systemInstruction: SYSTEM_PROMPT 
+        }, { fetch: fetch });
 
-    const result = await model.generateContent(userPrompt);
-    const response = await result.response;
-    const text = response.text();
+        const result = await model.generateContent(userPrompt);
+        const response = await result.response;
+        const text = response.text();
 
-    // Cleanup: Remove any potential markdown formatting the AI adds
-    const cleanJson = text.replace(/```json|```/g, '').trim();
-    
-    return JSON.parse(cleanJson);
-  } catch (error) {
-    console.error("AI Classification Failed:", error);
-    // Return a structured error so your app doesn't crash
-    return { intent: "ERROR", message: "Could not classify intent." };
-  }
+        // Cleanup: Remove any potential markdown formatting
+        const cleanJson = text.replace(/```json|```/g, '').trim();
+        
+        // CRITICAL: The output is now expected to be an array of operations
+        return JSON.parse(cleanJson);
+    } catch (error) {
+        console.error("AI Classification Failed:", error);
+        // Return a structured error to avoid crashing the app
+        return [{ intent: "ERROR", message: "Could not classify intent." }];
+    }
 }
 
 module.exports = { classifyIntent };

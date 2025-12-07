@@ -1,19 +1,23 @@
-// Backend/controllers/agentController.js
+// Backend/controllers/agentController.js - UPDATED for Sequential/Batch Processing
+
 const { classifyIntent } = require('../services/intentClassifier');
 const { translateIntent } = require('../services/intentToMongo');
 const { executeQuery } = require('../services/queryEngine');
 const Employee = require('../models/Employee');
 
+// Store results from previous successful commands for context (Placeholder for next step)
+const CONTEXT_STORE = {}; 
+
 /**
  * FULL AI PIPELINE:
  * 1. Receive User Prompt
- * 2. AI Classifies Intent (Gemini)
- * 3. Translator Converts to MongoDB Syntax
- * 4. Engine Executes Query on Database
- * 5. Return Results
+ * 2. AI Classifies Intent (Gemini) -> Returns ARRAY of Intent Objects
+ * 3. Translator Converts to MongoDB Syntax -> Returns ARRAY of Execution Operations
+ * 4. Engine Executes Query on Database (Sequential Execution)
+ * 5. Return ALL Results
  */
 const handleAgentCommand = async (req, res) => {
-    const { prompt } = req.body;
+    const { prompt, sessionId = 'default-session' } = req.body; // Use a default session ID if none is provided
 
     if (!prompt) {
         return res.status(400).json({ error: "No prompt provided." });
@@ -22,36 +26,47 @@ const handleAgentCommand = async (req, res) => {
     try {
         console.log(`🧠 Processing: "${prompt}"`);
 
-        // STEP 1: Classify
-        const intentResult = await classifyIntent(prompt);
-        if (intentResult.intent === "ERROR") {
-             return res.status(500).json(intentResult);
-        }
-
-        // STEP 2: Translate
-        const dbOperation = translateIntent(intentResult);
+        // STEP 1: Classify (The AI now returns an array of 1 or more intent objects)
+        const intentResults = await classifyIntent(prompt); 
         
-        // Handle unsupported actions immediately
-        if (dbOperation.action === 'unknown') {
-            return res.json({
-                status: "Unprocessed",
-                message: dbOperation.reason,
-                originalIntent: intentResult
-            });
+        // Basic check for classification error
+        if (intentResults[0].intent === "ERROR") {
+             return res.status(500).json(intentResults[0]);
         }
+        
+        // STEP 2: Translate - Returns an array of execution operations
+        const dbOperations = translateIntent(intentResults); 
+        
+        const finalResults = [];
 
-        // STEP 3: Execute
-        // Note: This requires a live MongoDB connection (setup in index.js)
-        const dataResult = await executeQuery(dbOperation, Employee);
+        // STEP 3: Execute (Sequential Execution of all operations)
+        for (const operation of dbOperations) {
+            if (operation.action === 'unknown') {
+                finalResults.push({ status: "Unprocessed", message: operation.reason });
+                continue;
+            }
+
+            const dataResult = await executeQuery(operation, Employee);
+            finalResults.push({ 
+                action: operation.action, 
+                data: dataResult, 
+                filterOrPipelineUsed: operation.filter || operation.pipeline || operation.data 
+            });
+            
+            // Context placeholder: We won't fully implement context until the next step
+            if (operation.action === 'find' || operation.action === 'aggregate') {
+                 // Store the retrieved data for subsequent commands in the same session
+                 CONTEXT_STORE[sessionId] = dataResult; 
+            }
+        }
 
         // STEP 4: Respond
         return res.json({
             status: "Success",
-            action: dbOperation.action,
-            data: dataResult,
+            results: finalResults,
             meta: {
                 originalPrompt: prompt,
-                aiInterpretation: intentResult
+                aiInterpretation: intentResults
             }
         });
 
