@@ -29,6 +29,7 @@ app.use(cors({
     credentials: true,
 }));
 
+
 // Session and Auth Setup
 app.use(session({
     secret: process.env.SESSION_SECRET || "fallback_secret_key_123",
