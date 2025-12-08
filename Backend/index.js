@@ -1,14 +1,16 @@
 const path = require("path");
 require("dotenv").config({ path: path.resolve(__dirname, "./.env") });
-
+const multer = require('multer');
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const mongoose = require('mongoose');
-const { test_brain } = require('./test_brain'); 
+const { runTests } = require('./test_brain'); 
 const Employee = require('./models/employeeModel'); 
 const { parseUserIntent } = require('./intentclassifier');
-const { setGlobalDispatcher, ProxyAgent } = require("undici");
+// const { setGlobalDispatcher, ProxyAgent } = require("undici");
 const session = require("express-session");
 const passport = require("passport");
 const passportSetup = require("./config/passport");
@@ -16,12 +18,12 @@ const csv = require('csv-parser');
 const moment = require('moment'); 
 const contactRoutes = require("./routes/contactRoutes")
 
-// Proxy Configuration
-if (process.env.PROXY_URL) {
-    console.log(`Using Proxy: ${process.env.PROXY_URL}`);
-    const dispatcher = new ProxyAgent(process.env.PROXY_URL);
-    setGlobalDispatcher(dispatcher);
-}
+// // Proxy Configuration
+// if (process.env.PROXY_URL) {
+//     console.log(`Using Proxy: ${process.env.PROXY_URL}`);
+//     const dispatcher = new ProxyAgent(process.env.PROXY_URL);
+//     setGlobalDispatcher(dispatcher);
+// }
 
 const app = express();
 app.use(express.json());
@@ -63,7 +65,6 @@ const calculateTenure = (hireDate, termDate) => {
   return parseFloat(end.diff(start, 'years', true).toFixed(1));
 };
 
-// ------------------- ROUTES ------------------- //
 
 // 1. Get Employees (Reads CSV on request)
 app.get('/api/employees', (req, res) => {
@@ -125,11 +126,26 @@ app.get('/api/employees', (req, res) => {
     });
 });
 
-// 2. Intent Analysis
-app.post('/api/analyze-intent', async (req, res) => {
+// 2. Intent Analysis - CORRECTED
+app.post('/api/analyze-intent', upload.single('file'), async (req, res) => {
     try {
+        // Multer parses the form data.
+        // Text fields (like 'prompt') are available in req.body.
+        // The file object (if uploaded) is available in req.file.
         const { prompt } = req.body;
-        if (!prompt) return res.status(400).json({ error: "Prompt is required" });
+        const uploadedFile = req.file; // This holds the file (if one was sent)
+        const result = runTests(prompt);
+        console.log(result)
+
+        console.log("Received Prompt for Intent Analysis:", prompt);
+        console.log("Received File:", uploadedFile ? uploadedFile.originalname : 'No file attached');
+
+        if (!prompt && !uploadedFile) {
+            return res.status(400).json({ error: "Prompt or file attachment is required" });
+        }
+        
+        // If you were to pass the file content to Gemini, you would need to read 
+        // uploadedFile.buffer (since we used memory storage).
 
         console.log(`Analyzing Prompt: "${prompt}"`);
         const intentData = await parseUserIntent(prompt); // Calls Gemini
@@ -141,8 +157,7 @@ app.post('/api/analyze-intent', async (req, res) => {
         console.error("Server Error:", error);
         res.status(500).json({ error: "Internal Server Error", details: error.message });
     }
-});;
-
+});
 // 3. Auth Routes (Google)
 app.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
 
