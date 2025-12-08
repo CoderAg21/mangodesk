@@ -14,6 +14,7 @@ const passport = require("passport");
 const passportSetup = require("./config/passport");
 const csv = require('csv-parser');
 const moment = require('moment'); 
+const contactRoutes = require("./routes/contactRoutes")
 
 // Proxy Configuration
 if (process.env.PROXY_URL) {
@@ -172,6 +173,11 @@ app.get("/logout", (req, res, next) => {
 app.get('/signup', (req, res) => { // Fixed typo 'singup'
   res.send('Signup here');
 });
+
+
+// Routes
+app.use('/api/contact', contactRoutes);
+
 
 // ------------------- SERVER START ------------------- //
 mongoose.connect(MONGO_URI)
