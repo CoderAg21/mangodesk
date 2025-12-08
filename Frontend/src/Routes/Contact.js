@@ -1,27 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+// removed axios import
 import { 
-  Send, 
-  MapPin, 
-  ArrowRight,
-  Github,
-  Twitter,
-  Linkedin,
-  Copy,
-  Check,
-  MessageSquare,
-  Clock
+  Send, MapPin, ArrowRight, Github, Twitter, Linkedin, 
+  Copy, Check, MessageSquare, Clock, Loader2 
 } from 'lucide-react';
 import Header from '../Components/Header';
-const InputField = ({ label, type = "text", placeholder, delay }) => {
+
+// Optimized InputField
+const InputField = ({ label, name, type = "text", placeholder, delay, value, onChange }) => {
   const [focused, setFocused] = useState(false);
 
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true }}
-      transition={{ delay }}
+      viewport={{ once: true, margin: "-50px" }}
+      transition={{ delay, duration: 0.5 }}
       className="relative mb-8"
     >
       <label className={`block text-sm font-medium mb-2 transition-colors duration-300 ${focused ? 'text-amber-400' : 'text-white/40'}`}>
@@ -30,6 +25,9 @@ const InputField = ({ label, type = "text", placeholder, delay }) => {
       <div className="relative">
         {type === "textarea" ? (
           <textarea 
+            name={name}
+            value={value}
+            onChange={onChange}
             rows="4"
             placeholder={placeholder}
             onFocus={() => setFocused(true)}
@@ -38,6 +36,9 @@ const InputField = ({ label, type = "text", placeholder, delay }) => {
           />
         ) : (
           <input 
+            name={name}
+            value={value}
+            onChange={onChange}
             type={type}
             placeholder={placeholder}
             onFocus={() => setFocused(true)}
@@ -45,8 +46,6 @@ const InputField = ({ label, type = "text", placeholder, delay }) => {
             className="w-full bg-slate-900/50 border border-white/10 rounded-xl p-4 text-white placeholder-white/20 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/50 transition-all duration-300"
           />
         )}
-        
-        {/* Animated Bottom Border */}
         <div className={`absolute bottom-0 left-0 h-[1px] bg-gradient-to-r from-amber-500 to-orange-500 transition-all duration-500 ${focused ? 'w-full opacity-100' : 'w-0 opacity-0'}`} />
       </div>
     </motion.div>
@@ -66,24 +65,69 @@ const SocialLink = ({ icon: Icon, href, label }) => (
   </a>
 );
 
-
 export default function Contact() {
   const [copied, setCopied] = useState(false);
   const [time, setTime] = useState('');
+  
+  // Form Logic
+  const [formData, setFormData] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    message: ''
+  });
+  const [status, setStatus] = useState('idle');
 
-  // Live Time for Lucknow HQ Context
   useEffect(() => {
     const updateTime = () => {
       setTime(new Date().toLocaleTimeString('en-US', { 
         timeZone: 'Asia/Kolkata',
         hour: '2-digit', 
-        minute: '2-digit'
+        minute: '2-digit',
+        second: '2-digit'
       }));
     };
     updateTime();
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // --- REPLACED AXIOS WITH FETCH HERE ---
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setStatus('loading');
+
+    try {
+      const response = await fetch('http://localhost:5000/api/contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Something went wrong');
+      }
+
+      // Success Logic
+      setStatus('success');
+      setFormData({ firstName: '', lastName: '', email: '', message: '' });
+      setTimeout(() => setStatus('idle'), 5000);
+
+    } catch (error) {
+      console.error("Submission Error:", error);
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 5000);
+    }
+  };
 
   const copyEmail = () => {
     navigator.clipboard.writeText("hello@mangodesk.ai");
@@ -93,25 +137,23 @@ export default function Contact() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white overflow-hidden relative selection:bg-amber-500/30">
-      <Header></Header>
-      {/* --- Ambient Background Effects (Matching Hero) --- */}
+      <Header />
+      
+      {/* --- Ambient Background Effects --- */}
       <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20" />
+        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.15]" />
+        
         <motion.div 
-          animate={{ 
-            x: [0, 100, 0],
-            y: [0, -50, 0],
-          }}
+          animate={{ x: [0, 100, 0], y: [0, -50, 0] }}
+          style={{ willChange: "transform" }} 
           transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-          className="absolute top-0 right-0 w-[600px] h-[600px] bg-amber-500/10 rounded-full blur-[100px]" 
+          className="absolute top-0 right-0 w-[600px] h-[600px] bg-amber-500/10 rounded-full blur-[80px]" 
         />
         <motion.div 
-          animate={{ 
-            x: [0, -100, 0],
-            y: [0, 50, 0],
-          }}
+          animate={{ x: [0, -100, 0], y: [0, 50, 0] }}
+          style={{ willChange: "transform" }}
           transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-          className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-orange-600/10 rounded-full blur-[120px]" 
+          className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-orange-600/10 rounded-full blur-[100px]" 
         />
       </div>
 
@@ -119,13 +161,12 @@ export default function Contact() {
         
         <div className="grid lg:grid-cols-2 gap-20 items-start">
           
-          {/* --- Left Column: Context & Info --- */}
+          {/* --- Left Column --- */}
           <motion.div 
             initial={{ opacity: 0, x: -50 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.8 }}
           >
-            {/* Status Indicator */}
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-amber-500/20 bg-amber-500/10 text-amber-400 text-xs font-mono mb-8">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
@@ -151,7 +192,6 @@ export default function Contact() {
               <SocialLink icon={Linkedin} href="#" label="Connect on LinkedIn" />
             </div>
 
-            {/* Location & Time Card */}
             <div className="p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md inline-block min-w-[300px]">
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center border border-white/10 shadow-lg">
@@ -199,36 +239,60 @@ export default function Contact() {
                 </button>
               </div>
 
-              <form onSubmit={(e) => e.preventDefault()}>
+              <form onSubmit={handleSubmit}>
                 <div className="grid grid-cols-2 gap-6">
-                  <InputField label="First Name" placeholder="Jane" delay={0.3} />
-                  <InputField label="Last Name" placeholder="Doe" delay={0.3} />
+                  <InputField 
+                    label="First Name" name="firstName" placeholder="Jane" delay={0.3} 
+                    value={formData.firstName} onChange={handleInputChange} 
+                  />
+                  <InputField 
+                    label="Last Name" name="lastName" placeholder="Doe" delay={0.3} 
+                    value={formData.lastName} onChange={handleInputChange} 
+                  />
                 </div>
-                <InputField label="Email Address" type="email" placeholder="jane@company.com" delay={0.4} />
-                <InputField label="Your Message" type="textarea" placeholder="Tell us about your data challenges..." delay={0.5} />
+                <InputField 
+                  label="Email Address" name="email" type="email" placeholder="jane@company.com" delay={0.4} 
+                  value={formData.email} onChange={handleInputChange}
+                />
+                <InputField 
+                  label="Your Message" name="message" type="textarea" placeholder="Tell us about your data challenges..." delay={0.5} 
+                  value={formData.message} onChange={handleInputChange}
+                />
 
                 <motion.button
                   whileHover={{ scale: 1.02, boxShadow: "0 10px 30px -10px rgba(245, 158, 11, 0.5)" }}
                   whileTap={{ scale: 0.98 }}
-                  className="w-full py-5 bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl font-bold text-white shadow-lg shadow-orange-500/20 flex items-center justify-center gap-3 group mt-4 relative overflow-hidden"
+                  disabled={status === 'loading'}
+                  className="w-full py-5 bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl font-bold text-white shadow-lg shadow-orange-500/20 flex items-center justify-center gap-3 group mt-4 relative overflow-hidden disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                  <span className="relative z-10">Send Message</span>
-                  <Send className="w-4 h-4 relative z-10 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                  <span className="relative z-10">
+                    {status === 'loading' ? 'Sending...' : status === 'success' ? 'Sent!' : status === 'error' ? 'Failed' : 'Send Message'}
+                  </span>
                   
-                  {/* Hover Shine Effect */}
+                  {status === 'loading' ? (
+                    <Loader2 className="w-4 h-4 relative z-10 animate-spin" />
+                  ) : status === 'success' ? (
+                    <Check className="w-4 h-4 relative z-10" />
+                  ) : (
+                    <Send className="w-4 h-4 relative z-10 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                  )}
+                  
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
                 </motion.button>
+
+                {status === 'error' && (
+                  <p className="text-red-400 text-xs mt-3 text-center">Something went wrong. Please try again.</p>
+                )}
               </form>
 
-              {/* Decorative Icon inside card */}
               <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none transform rotate-12">
                 <MessageSquare className="w-48 h-48 text-white" />
               </div>
             </div>
 
-            {/* Rotating "Sticker" Badge */}
             <motion.div
               animate={{ rotate: 360 }}
+              style={{ willChange: "transform" }}
               transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
               className="absolute -top-12 -right-12 w-32 h-32 hidden lg:flex items-center justify-center pointer-events-none"
             >
@@ -255,28 +319,23 @@ export default function Contact() {
       <div className="absolute bottom-0 w-full border-t border-white/5 bg-slate-900/50 backdrop-blur-md overflow-hidden py-4">
         <motion.div 
           animate={{ x: [0, -1000] }}
+          style={{ willChange: "transform" }}
           transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
           className="flex whitespace-nowrap gap-8"
         >
           {[...Array(10)].map((_, i) => (
             <div key={i} className="flex items-center gap-8 opacity-30 hover:opacity-100 transition-opacity duration-500 cursor-default select-none">
-              
               <span className="text-4xl font-bold font-mono tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">
                 MANGODESK
               </span>
-              
               <span className="text-white/20 text-2xl">✦</span>
-              
               <span className="text-4xl font-bold font-mono tracking-tighter stroke-text text-transparent" style={{ WebkitTextStroke: '1px rgba(255,255,255,0.3)' }}>
                 START FREE TRIAL
               </span>
-              
               <span className="text-white/20 text-2xl">✦</span>
-              
               <span className="text-4xl font-bold font-mono tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-white/50">
                 EXPLORE SOLUTIONS
               </span>
-              
               <span className="text-white/20 text-2xl">✦</span>
             </div>
           ))}
