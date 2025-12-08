@@ -2,10 +2,11 @@ const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 
+// NOTE: These services must be implemented to return results and intents as expected.
 const { classifyIntent } = require("../services/intentClassifier");
 const { translateIntent } = require("../services/intentToMongo");
 const { executeQuery } = require("../services/queryEngine");
-const Employee = require("../models/Employee");
+const Employee = require("../models/Employee"); // Assuming this is your Mongoose model
 
 // ------------------------------
 // 1. MULTER DISK STORAGE SETUP
@@ -13,14 +14,11 @@ const Employee = require("../models/Employee");
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const folderPath = path.join(__dirname, "../data");
-
         if (!fs.existsSync(folderPath)) {
-            fs.mkdirSync(folderPath, { recursive: true }); // create if not exists
+            fs.mkdirSync(folderPath, { recursive: true });
         }
-
-        cb(null, folderPath); // save inside backend/data
+        cb(null, folderPath);
     },
-
     filename: (req, file, cb) => {
         const timestamp = Date.now();
         const safeName = file.originalname.replace(/\s+/g, "_");
@@ -35,11 +33,16 @@ const upload = multer({ storage });
 // ----------------------------------
 const SESSION_CONTEXT = {};
 
-// Helper functions
+// ----------------------------------
+// 2. HELPER FUNCTIONS
+// ----------------------------------
+
 const safeNumber = v => (typeof v === 'number' && !Number.isNaN(v)) ? v : null;
 const fmtNumber = n => {
     const num = safeNumber(n);
-    return num == null ? 'N/A' : Number(num).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (num == null) return 'N/A';
+    // Use toLocaleString for general numbers, limit to 2 decimal places
+    return Number(num).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 };
 const fmtCurrency = n => {
     const num = safeNumber(n);
@@ -48,95 +51,122 @@ const fmtCurrency = n => {
 };
 const plural = (n, singular, pluralForm) => (n === 1 ? singular : (pluralForm || singular + 's'));
 
-// Intelligent summary generator
+/**
+ * 3. generateAgentResponse(results, intentResults)
+ *
+ * Produces a concise, human-friendly message describing what the agent did.
+ */
 const generateAgentResponse = (results = [], intentResults = []) => {
-    if (!results || results.length === 0) return "I completed the request but no data was returned.";
+    if (!results || results.length === 0) return "I completed the request, but there was no data returned from the database.";
 
     const firstIntent = intentResults[0] || {};
     const firstResult = results[0] || {};
     const action = firstResult.action || 'unknown';
 
-    if (firstIntent.intent === 'CHAT_RESPONSE') return firstIntent.response || "Okay — noted.";
-    if (action === 'unknown') return firstResult.message || "Could not process the request.";
+    // Handle Chat/Error Intents immediately
+    if (firstIntent.intent === 'CHAT_RESPONSE') return firstIntent.response || "Okay, I've noted that.";
+    if (action === 'unknown') return firstResult.message || "I couldn't translate that into a database action. Could you rephrase?";
 
+    // --- Multi-Step Action Handling (More Humanoid) ---
     if (results.length > 1) {
         const parts = results.map(r => {
             switch (r.action) {
                 case 'insertMany':
                 case 'create': {
-                    const arr = Array.isArray(r.data) ? r.data : [r.data];
+                    const arr = Array.isArray(r.data) ? r.data : [r.data].filter(Boolean);
                     const names = arr.map(e => e?.name).filter(Boolean);
-                    if (arr.length === 0) return 'added records (no details)';
-                    if (arr.length === 1) return `added 1 record (${names[0]})`;
-                    return `added ${arr.length} records: ${names.join(', ')}`;
+                    const count = arr.length;
+                    if (count === 0) return 'tried to add records (no details)';
+                    return `**added ${count} ${plural(count, 'record')}**${names.length ? ` (${names.join(', ')})` : ''}`;
                 }
                 case 'updateMany': {
                     const modified = r.data?.modifiedCount || 0;
                     const names = Array.isArray(r.data?.matchedDocs) ? r.data.matchedDocs.map(e => e.name).filter(Boolean) : [];
-                    const nameStr = names.length ? `: ${names.join(', ')}` : '';
-                    return modified ? `updated ${modified} ${plural(modified, 'record')}${nameStr}` : 'performed an update (0 changed)';
+                    if (modified === 0) return 'performed an update (0 records changed)';
+                    return `**updated ${modified} ${plural(modified, 'record')}**`;
                 }
                 case 'deleteMany': {
                     const deleted = r.data?.deletedCount || 0;
-                    return deleted ? `removed ${deleted} ${plural(deleted, 'record')}` : 'performed a delete (0 removed)';
+                    return deleted ? `**removed ${deleted} ${plural(deleted, 'record')}**` : 'performed a deletion (0 records removed)';
                 }
                 case 'aggregate': {
-                    const rows = Array.isArray(r.data) ? r.data : [r.data];
+                    const rows = Array.isArray(r.data) ? r.data : [r.data].filter(Boolean);
                     const metrics = rows.map(row => {
                         const keys = Object.keys(row).filter(k => typeof row[k] === 'number');
-                        return keys.map(k => `${row.name || row._id}: ${fmtNumber(row[k])}`).join(', ');
+                        return keys.map(k => {
+                            const isCurrency = k.toLowerCase().includes('salary') || k.toLowerCase().includes('comp');
+                            // Fallback to the key name if _id and name are missing (e.g., $count)
+                            const label = row.name || row._id || k.replace(/_/g, ' '); 
+                            return `${label}: ${isCurrency ? fmtCurrency(row[k]) : fmtNumber(row[k])}`;
+                        }).join(', ');
                     });
-                    return metrics.length ? `calculated metrics: ${metrics.join(', ')}` : 'aggregation returned no valid data';
+                    return metrics.length ? `**calculated metrics** (${metrics.join(', ')})` : 'could not calculate metrics';
                 }
                 case 'find': {
                     const count = Array.isArray(r.data) ? r.data.length : (r.data ? 1 : 0);
-                    return count ? `verified ${count} ${plural(count, 'record')}` : 'no matching records found';
+                    return count ? `**retrieved ${count} ${plural(count, 'record')}**` : 'found no matching records';
                 }
-                default: return r.message || 'action performed';
+                default: return r.message || 'completed an action';
             }
         });
-        return `All set — ${parts.join(', ')}.`;
+        // Construct the final, natural-sounding multi-step summary
+        const final = parts.length === 1 ? parts[0] : parts.slice(0, -1).join(', ') + ' and ' + parts.slice(-1);
+        return `I've finished the sequence: I **${final}**.`;
     }
 
-    // Single-action handling
+    // --- Single-Step Action Handling (More Humanoid) ---
     switch (action) {
         case 'find': {
-            const rows = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data];
-            if (rows.length === 0) return 'Searched database but found no matching employees.';
-            if (rows.length === 1) return `Found 1 employee — ${rows[0].name ?? 'Unknown'}${rows[0].department ? ` in ${rows[0].department}` : ''}.`;
-            return `Found ${rows.length} employees that match your criteria.`;
+            const rows = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data].filter(Boolean);
+            const count = rows.length;
+
+            if (count === 0) return "I searched, but I didn't find any employees matching your criteria.";
+            if (count === 1) {
+                const e = rows[0];
+                return `I found **${e.name || 'one employee'}**${e.department ? ` in the **${e.department}** department` : ''}.`;
+            }
+            const names = rows.map(e => e.name).filter(Boolean).slice(0, 5); // Show up to 5 names
+            const nameList = names.length > 0 ? ` (e.g., ${names.join(', ')}${rows.length > 5 ? '...' : ''})` : '';
+            return `I found **${count}** employees matching that search${nameList}.`;
         }
         case 'aggregate': {
-            const rows = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data];
+            const rows = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data].filter(Boolean);
             const metrics = rows.map(row => {
                 const keys = Object.keys(row).filter(k => typeof row[k] === 'number');
-                return keys.map(k => `${row.name || row._id}: ${fmtNumber(row[k])}`).join(', ');
+                return keys.map(k => {
+                    const isCurrency = k.toLowerCase().includes('salary') || k.toLowerCase().includes('comp');
+                    const label = row.name || row._id || k.replace(/_/g, ' ');
+                    return `**${label}**: ${isCurrency ? fmtCurrency(row[k]) : fmtNumber(row[k])}`;
+                }).join(', ');
             });
-            return metrics.length ? `Calculated metrics: ${metrics.join(', ')}.` : 'Aggregation returned no valid data.';
+            return metrics.length ? `Here are the calculations you requested: ${metrics.join(', ')}.` : 'I aggregated the data, but the result was empty.';
         }
         case 'insertMany':
         case 'create': {
-            const arr = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data];
+            const arr = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data].filter(Boolean);
+            const count = arr.length;
             const names = arr.map(e => e?.name).filter(Boolean);
-            if (arr.length === 0) return 'No records inserted.';
-            if (arr.length === 1) return `Added ${names[0]}`;
-            return `Added ${arr.length} records: ${names.join(', ')}`;
+            if (count === 0) return 'The creation command ran, but no records were inserted. Something might be wrong.';
+            if (count === 1) return `Successfully added **${names[0] || 'a new record'}** to the database.`;
+            return `I successfully added **${count} new records**${names.length ? `, including ${names.slice(0, 3).join(', ')}` : ''}.`;
         }
         case 'updateMany': {
             const modified = firstResult.data?.modifiedCount || 0;
             const names = Array.isArray(firstResult.data?.matchedDocs) ? firstResult.data.matchedDocs.map(e => e.name).filter(Boolean) : [];
-            const nameStr = names.length ? `: ${names.join(', ')}` : '';
-            return modified ? `Updated ${modified} ${plural(modified, 'record')}${nameStr} successfully.` : 'No records updated.';
+            if (modified > 0) return `I've successfully updated **${modified} ${plural(modified, 'record')}** in the database.`;
+            return 'No records were changed; either the filter matched nothing, or the values were already set.';
         }
         case 'deleteMany': {
             const removed = firstResult.data?.deletedCount || 0;
-            return removed ? `Removed ${removed} ${plural(removed, 'record')}.` : 'No records deleted.';
+            return removed ? `I have removed **${removed} ${plural(removed, 'record')}** as requested.` : 'No records matched the criteria for deletion.';
         }
-        default: return 'Request completed.';
+        default: return 'The database operation completed successfully. How else can I help?';
     }
 };
 
-// Main handler
+// ----------------------------------
+// 4. MAIN HANDLER
+// ----------------------------------
 const handleAgentCommand = async (req, res) => {
     const { prompt, sessionId = 'default-session' } = req.body || {};
     const file = req.file;
@@ -144,28 +174,23 @@ const handleAgentCommand = async (req, res) => {
     if (!prompt && !file) return res.status(400).json({ error: 'A prompt or file attachment must be provided.' });
 
     try {
-        let { prompt, sessionId = "default-session" } = req.body;
-        const file = req.file;
+        // NOTE: Destructure again here to avoid potential shadowing issues from the above check.
+        let { prompt: userPrompt, sessionId: currentSessionId = "default-session" } = req.body;
+        const attachedFile = req.file;
 
-        console.log(`📩 Prompt: "${prompt}", File: ${file ? file.filename : "None"}`);
+        console.log(`📩 Prompt: "${userPrompt}", File: ${attachedFile ? attachedFile.filename : "None"}`);
 
-        if (!prompt && !file) {
-            return res.status(400).json({ error: "No input provided." });
-        }
-
-        // ------------------------------
         // 2. PROCESS FILE (Saved via Multer)
-        // ------------------------------
-        let augmentedPrompt = prompt || "";
+        let augmentedPrompt = userPrompt || "";
 
-        if (file) {
+        if (attachedFile) {
             try {
-                const fullPath = file.path; // multer saved the file
+                // Ensure a temporary file is deleted after use in a production environment!
+                const fullPath = attachedFile.path;
                 const fileContent = fs.readFileSync(fullPath, "utf8");
 
                 augmentedPrompt += `
-
-[ATTACHED FILE (${file.originalname}) SAVED AT ${fullPath}]
+[ATTACHED FILE (${attachedFile.originalname}) SAVED AT ${fullPath}]
 ${fileContent}
 
 [INSTRUCTION]: Analyze the above file based on the user's request.`;
@@ -176,14 +201,15 @@ ${fileContent}
             }
         }
 
-        // ------------------------------
         // 3. CONTEXT PREP
-        // ------------------------------
-        const context = SESSION_CONTEXT[sessionId] || {};
+        const context = SESSION_CONTEXT[currentSessionId] || {};
         const intentResults = await classifyIntent(augmentedPrompt, JSON.stringify(context));
         const firstIntent = intentResults[0] || {};
 
-        if (firstIntent.intent === 'ERROR') return res.status(500).json(firstIntent);
+        if (firstIntent.intent === 'ERROR') {
+            console.error("AI Classification Error:", firstIntent.message);
+            return res.status(500).json(firstIntent);
+        }
 
         if (firstIntent.intent === 'AMBIGUOUS_QUERY') {
             const humanOptions = (firstIntent.suggestions || []).map(opt =>
@@ -191,9 +217,9 @@ ${fileContent}
             );
             return res.json({
                 status: 'Clarification Needed',
-                message: "Your query is ambiguous. Please choose one of the following fields:",
+                response: `Your query is ambiguous. I'm not sure which field you mean. Could you clarify, perhaps by choosing one of these: ${humanOptions.join(', ')}?`,
                 options: humanOptions,
-                meta: { originalPrompt: prompt }
+                meta: { originalPrompt: userPrompt }
             });
         }
 
@@ -202,11 +228,11 @@ ${fileContent}
                 status: 'Processed',
                 response: firstIntent.response || 'Understood.',
                 results: [],
-                meta: { originalPrompt: prompt }
+                meta: { originalPrompt: userPrompt }
             });
         }
 
-        // Translate intent to MongoDB operations
+        // --- Execute Database Operations ---
         const dbOperations = translateIntent(intentResults);
         const finalResults = [];
 
@@ -219,20 +245,23 @@ ${fileContent}
             try {
                 const dataResult = await executeQuery(op, Employee);
 
-                // For updateMany, attach matchedDocs for reporting names
-                if (op.action === 'updateMany' && Array.isArray(dataResult?.matchedDocs)) {
-                    finalResults.push({ action: op.action, data: dataResult, filterOrPipelineUsed: op.filter || {} });
-                } else {
-                    finalResults.push({ action: op.action, data: dataResult, filterOrPipelineUsed: op.filter || op.pipeline || op.data || {} });
-                }
+                // Preserve matched docs for humanoid response generation
+                finalResults.push({ action: op.action, data: dataResult, filterOrPipelineUsed: op.filter || op.pipeline || op.data || {} });
 
+                // Update Session Context
                 if (['find', 'aggregate'].includes(op.action)) {
-                    SESSION_CONTEXT[sessionId] = { lastAction: op.action, lastFilter: op.filter || op.pipeline, resultCount: Array.isArray(dataResult) ? dataResult.length : 1 };
-                } else if (['updateMany', 'deleteMany'].includes(op.action)) {
-                    delete SESSION_CONTEXT[sessionId];
+                    SESSION_CONTEXT[currentSessionId] = {
+                        lastAction: op.action,
+                        lastFilter: op.filter || op.pipeline,
+                        resultCount: Array.isArray(dataResult) ? dataResult.length : (dataResult ? 1 : 0)
+                    };
+                } else if (['updateMany', 'deleteMany', 'create', 'insertMany'].includes(op.action)) {
+                    // Reset context after modifying data
+                    delete SESSION_CONTEXT[currentSessionId];
                 }
             } catch (queryError) {
-                finalResults.push({ action: op.action, data: null, message: `Failed: ${queryError.message}` });
+                // Attach error message to result list for multi-step failure reporting
+                finalResults.push({ action: op.action, data: null, message: `Database query failed: ${queryError.message}` });
             }
         }
 
@@ -240,14 +269,14 @@ ${fileContent}
 
         return res.json({
             status: 'Success',
-            response: aiResponse,
-            results: finalResults,
-            meta: { originalPrompt: prompt }
+            response: aiResponse, // The final, conversational message
+            results: finalResults, // Raw results for frontend debugging/display
+            meta: { originalPrompt: userPrompt }
         });
 
     } catch (error) {
         console.error('Agent Error:', error);
-        return res.status(500).json({ error: 'Something went wrong processing your request.', details: error.message || String(error) });
+        return res.status(500).json({ error: 'I encountered a major error while processing your request.', details: error.message || String(error) });
     }
 };
 
