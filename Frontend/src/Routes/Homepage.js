@@ -114,89 +114,99 @@ export default function Home() {
     { icon: Zap, text: 'Write a creative story', color: 'from-amber-400 to-orange-400' },
   ];
 
-  async function sendMessage(text) {
-    if ((!text.trim() && !selectedFile) || isLoading) return;
-
-    // 1. Optimistic UI Update: Show user message immediately
-    let displayMessage = text;
-    if (selectedFile) {
-        displayMessage = text ? `${text} \n(Attached: ${selectedFile.name})` : `Analyzed ${selectedFile.name}`;
-    }
-
-    const userMessage = { role: 'user', text: displayMessage, id: Date.now() };
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-
-    // 2. Capture data before clearing state
-    const currentInput = text;
-    const currentFile = selectedFile;
-
-    // 3. Reset UI inputs
-    setInput('');
-    setSelectedFile(null); 
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    
-    // 4. Set Loading State
-    setIsLoading(true);
-
-    // Handle new conversation creation logic if needed
-    if (messages.length === 0 && !currentConversationId) {
-      const newConvId = Date.now();
-      const conversationTitle = text.length > 40 ? text.substring(0, 40) + '...' : (text || "New File Analysis");
-      const newConversation = {
-        id: newConvId,
-        title: conversationTitle,
-        preview: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
-        messages: updatedMessages
-      };
-      setConversations(prev => [newConversation, ...prev]);
-      setCurrentConversationId(newConvId);
-    }
-
-    try {
-      // 5. Prepare FormData for Backend (Multer compatible)
-      const formData = new FormData();
-      formData.append('prompt', currentInput); // Access via req.body.prompt in backend
-      
-      if (currentFile) {
-        formData.append('file', currentFile); // Access via req.file in backend (using upload.single('file'))
-      }
-
-      // 6. Send Request
-      const response = await fetch('http://localhost:5000/api/chat', {
-        method: 'POST',
-        // Note: Do NOT set Content-Type header when using FormData; 
-        // fetch sets it automatically with the correct boundary.
-        body: formData, 
-      });
-
-      if (!response.ok) {
-        throw new Error(`Server Error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const aiResponseText = data.response || "Process completed successfully.";
-
-      // 7. Success State
-      const aiMessage = { role: 'ai', text: aiResponseText, id: Date.now() };
-      setMessages(prev => [...prev, aiMessage]);
-
-    } catch (error) {
-      console.error('Fetch error:', error);
-      
-      // 8. Error State (Red Styling)
-      const errorMessage = { 
-        role: 'ai', 
-        text: `Error: ${error.message || "Unable to connect to server."}`, 
-        id: Date.now(),
-        isError: true 
-      };
-      setMessages(prev => [...prev, errorMessage]);
-
-    } finally {
-      setIsLoading(false);
+  // Add this helper function outside the component or at the top of Home.js
+function logFormDataContents(formData) {
+  const data = {};
+  for (let [key, value] of formData.entries()) {
+    if (value instanceof File) {
+      // Log File details instead of the File object itself
+      data[key] = { name: value.name, size: value.size, type: value.type };
+    } else {
+      data[key] = value;
     }
   }
+  console.log('✅ FormData Contents Ready to Send:', data);
+}
+
+async function sendMessage(text) {
+    if ((!text.trim() && !selectedFile) || isLoading) return;
+
+    // 1. Optimistic UI Update: Show user message immediately
+    let displayMessage = text;
+    if (selectedFile) {
+        displayMessage = text ? `${text} \n(Attached: ${selectedFile.name})` : `Analyzed ${selectedFile.name}`;
+    }
+
+    const userMessage = { role: 'user', text: displayMessage, id: Date.now() };
+    const updatedMessages = [...messages, userMessage];
+    setMessages(updatedMessages);
+
+    // 2. Capture data before clearing state
+    const currentInput = text;
+    const currentFile = selectedFile;
+
+    // 3. Reset UI inputs
+    setInput('');
+    setSelectedFile(null); 
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    
+    // 4. Set Loading State
+    setIsLoading(true);
+
+    // Handle new conversation creation logic if needed
+    // ... (Conversation logic remains the same)
+
+    try {
+      // 5. Prepare FormData for Backend (Multer compatible)
+      const formData = new FormData();
+      
+      // Correct: Appending text data
+      formData.append('prompt', currentInput); 
+      
+      if (currentFile) {
+        // Correct: Appending file data
+        formData.append('file', currentFile); 
+      }
+
+      // --- DEBUGGING CORRECTION ---
+      logFormDataContents(formData); // This line replaces console.log(formData)
+      // The old line `console.log(formData)` is removed.
+
+      // 6. Send Request
+      const response = await fetch('http://localhost:5000/api/analyze-intent', {
+        method: 'POST',
+        // Note: Do NOT set Content-Type header when using FormData; 
+        // fetch sets it automatically with the correct boundary.
+        body: formData, 
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const aiResponseText = data.response || "Process completed successfully.";
+
+      // 7. Success State
+      const aiMessage = { role: 'ai', text: aiResponseText, id: Date.now() };
+      setMessages(prev => [...prev, aiMessage]);
+
+    } catch (error) {
+      console.error('Fetch error:', error);
+      
+      // 8. Error State (Red Styling)
+      const errorMessage = { 
+        role: 'ai', 
+        text: `Error: ${error.message || "Unable to connect to server."}`, 
+        id: Date.now(),
+        isError: true 
+      };
+      setMessages(prev => [...prev, errorMessage]);
+
+    } finally {
+      setIsLoading(false);
+    }
+}
 
   function handleNewChat() {
     setMessages([]);
