@@ -1,33 +1,45 @@
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "./.env") });
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
-const csv = require('csv-parser');
-const path = require('path');
 const mongoose = require('mongoose');
-const app = express();
-app.use(express.json());
-app.use(cors());
-
-const agentRoutes = require('./routes/agentRoutes');
-
-// --- DATABASE CONNECTION ---
-// If you have a cloud URI (Atlas), put it in .env. Otherwise use local.
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mangodesk';
-
-mongoose.connect(MONGO_URI)
-  .then(() => console.log(' MongoDB Connected Successfully'))
-  .catch(err => console.error(' MongoDB Connection Error:', err));
-
-let employeesData = [];
-let isDataLoaded = false;
-
-// Helper arrays for synthetic data
-const educationLevels = ['B.Tech', 'M.Tech', 'PhD', 'MBA', 'B.Sc'];
-const genders = ['Male', 'Female'];
-const currentYear = new Date().getFullYear();
-
-// --- CRITICAL FIX: POINT TO THE 'data' FOLDER ---
+const multer = require('multer');
+const session = require("express-session");
+const passport = require("passport");
+const csv = require('csv-parser');
+const moment = require('moment');
+const agentRoutes = require('./routes/agentRoutes');  
 const csvFilePath = path.join(__dirname, 'data', 'employees.csv');
+const { runTests } = require('./test_brain');
+// const Employee = require('./models/employeeModel');
+const { parseUserIntent } = require('./intentclassifier');
+const passportSetup = require("./config/passport");
+const contactRoutes = require("./routes/contactRoutes");
+
+const app = express();
+const PORT = 5000;
+const MONGO_URI = 'mongodb://127.0.0.1:27017/mangodesk';
+
+// Middleware Configuration
+app.use(express.json());
+app.use(cors({
+    origin: "http://localhost:3000",
+    methods: "GET,POST,PUT,DELETE",
+    credentials: true,
+}));
+
+// Session and Auth Setup
+app.use(session({
+    secret: process.env.SESSION_SECRET || "fallback_secret_key_123",
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false }, // Set true only for HTTPS
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+passportSetup(passport);
 
 // Check if file exists before crashing
 if (!fs.existsSync(csvFilePath)) {
@@ -37,48 +49,122 @@ if (!fs.existsSync(csvFilePath)) {
 }
 
 console.log(` Loading CSV from: ${csvFilePath}`);
+// Multer Setup for memory storage
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
-fs.createReadStream(csvFilePath)
-  .pipe(csv())
-  .on('data', (row) => {
-    try {
-      // Calculate missing fields
-      const hireYear = row.hire_date ? new Date(row.hire_date).getFullYear() : 2020;
-      const age = (currentYear - hireYear) + 22 + Math.floor(Math.random() * 10);
-      const gender = genders[Math.floor(Math.random() * genders.length)];
-      const education = educationLevels[Math.floor(Math.random() * educationLevels.length)];
-      const leaves = Math.floor(Math.random() * 25);
+// Helper to calculate employee tenure
+const calculateTenure = (hireDate, termDate) => {
+    const start = moment(hireDate, ['M/D/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY']);
+    if (!start.isValid()) return 0;
 
-      employeesData.push({
-        ...row,
-        salary_usd: parseInt(row.salary_usd) || 0,
-        bonus_usd: parseInt(row.bonus_usd) || 0,
-        performance_score: parseFloat(row.performance_score) || 3.0,
-        promotion_count: parseInt(row.promotion_count) || 0,
-        remote_percentage: parseInt(row.remote_percentage) || 0,
-        age: age,
-        gender: gender,
-        education: education,
-        leaves_taken: leaves,
-        experience_years: currentYear - hireYear
-      });
-    } catch (err) {
-      // Skip bad rows quietly
+    let end = moment();
+    if (termDate && termDate !== '######' && termDate.trim() !== '') {
+        const term = moment(termDate, ['M/D/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY']);
+        if (term.isValid()) end = term;
     }
-  })
-  .on('end', () => {
-    isDataLoaded = true;
-    console.log(` Success! Loaded ${employeesData.length} employees.`);
-  });
+    return parseFloat(end.diff(start, 'years', true).toFixed(1));
+};
 
+// // Route: Get Employees from CSV
 app.get('/api/employees', (req, res) => {
-  if (!isDataLoaded) {
-    return res.status(503).json({ error: "Still loading data, please wait..." });
-  }
-  res.json(employeesData);
+    const results = [];
+    if (!fs.existsSync(csvFilePath)) return res.status(500).json({ error: "CSV file not found" });
+    fs.createReadStream(csvFilePath)
+        .pipe(csv())
+        .on('data', (data) => {
+            const salary = parseFloat(data.salary_usd) || 0;
+            const bonus = parseFloat(data.bonus_usd) || 0;
+            const stock = parseFloat(data.stock_options) || 0;
+
+            results.push({
+                id: data.employee_id,
+                name: data.name,
+                department: data.department || 'Unknown',
+                role: data.role || 'Unknown',
+                country: data.country || 'Unknown',
+                office: data.office_location || 'Remote',
+                hire_date: data.hire_date,
+                termination_date: data.termination_date === '######' ? null : data.termination_date,
+                tenure_years: calculateTenure(data.hire_date, data.termination_date),
+                salary_usd: salary,
+                bonus_usd: bonus,
+                stock_options: stock,
+                total_comp: salary + bonus + stock,
+                performance_score: parseFloat(data.performance_score) || 0,
+                promotion_count: parseInt(data.promotion_count) || 0,
+                project_count: parseInt(data.project_count) || 0,
+                work_hours: parseFloat(data.work_hours) || 0,
+                remote_percentage: parseInt(data.remote_percentage) || 0,
+                deals_closed: parseInt(data.deals_closed) || 0,
+                avg_deal_size: parseFloat(data.avg_deal_size) || 0,
+                client_reviews: parseFloat(data.client_reviews) || 0,
+                customer_satisfaction: parseFloat(data.customer_satisfaction) || 0,
+            });
+        })
+        .on('end', () => res.json(results))
+        .on('error', (err) => {
+            console.error("Error reading CSV:", err);
+            res.status(500).json({ error: "Failed to read data" });
+        });
 });
 
 app.use('/api/brain', agentRoutes);
 
-const PORT = 5000;
-app.listen(PORT, () => console.log(` Server running on port ${PORT}`));
+
+// Route: Analyze Intent (handles optional file upload)
+app.post('/api/analyze-intent', upload.single('file'), async (req, res) => {
+    try {
+        const { prompt } = req.body;
+        const uploadedFile = req.file;
+
+        runTests(prompt); 
+
+        if (!prompt && !uploadedFile) {
+            return res.status(400).json({ error: "Prompt or file attachment is required" });
+        }
+
+        const intentData = await parseUserIntent(prompt);
+        
+        if (intentData.error) return res.status(500).json(intentData);
+        res.json(intentData);
+
+    } catch (error) {
+        console.error("Server Error:", error);
+        res.status(500).json({ error: "Internal Server Error", details: error.message });
+    }
+});
+
+// Routes: Google Authentication
+app.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+
+app.get("/google/callback",
+    passport.authenticate("google", {
+        failureRedirect: "http://localhost:3000/login?error=unauthorized",
+        successRedirect: "http://localhost:3000",
+    })
+);
+
+app.get("/login/success", (req, res) => {
+    if (req.user) res.status(200).json({ success: true, user: req.user });
+    else res.status(401).json({ success: false, message: "Not authenticated" });
+});
+
+app.get("/logout", (req, res, next) => {
+    req.logout((err) => {
+        if (err) return next(err);
+        res.redirect("http://localhost:3000");
+    });
+});
+
+// Routes: Contact
+app.use('/api/contact', contactRoutes);
+
+// Server & Database Connection
+mongoose.connect(MONGO_URI)
+    .then(() => console.log("MongoDB connected"))
+    .catch((err) => console.log("DB Error:", err));
+
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:5000`);
+});
