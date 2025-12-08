@@ -1,99 +1,192 @@
+// controllers/agentController.js
 const { classifyIntent } = require('../services/intentClassifier');
 const { translateIntent } = require('../services/intentToMongo');
 const { executeQuery } = require('../services/queryEngine');
 const Employee = require('../models/Employee');
 
-// In-memory storage for session context (remembering filters between chats)
-const SESSION_CONTEXT = {}; 
+const SESSION_CONTEXT = {};
 
+// Helper functions
+const safeNumber = v => (typeof v === 'number' && !Number.isNaN(v)) ? v : null;
+const fmtNumber = n => {
+    const num = safeNumber(n);
+    return num == null ? 'N/A' : Number(num).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+const fmtCurrency = n => {
+    const num = safeNumber(n);
+    if (num == null) return 'N/A';
+    return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+const plural = (n, singular, pluralForm) => (n === 1 ? singular : (pluralForm || singular + 's'));
+
+// Intelligent summary generator
+const generateAgentResponse = (results = [], intentResults = []) => {
+    if (!results || results.length === 0) return "I completed the request but no data was returned.";
+
+    const firstIntent = intentResults[0] || {};
+    const firstResult = results[0] || {};
+    const action = firstResult.action || 'unknown';
+
+    if (firstIntent.intent === 'CHAT_RESPONSE') return firstIntent.response || "Okay — noted.";
+    if (action === 'unknown') return firstResult.message || "Could not process the request.";
+
+    if (results.length > 1) {
+        const parts = results.map(r => {
+            switch (r.action) {
+                case 'insertMany':
+                case 'create': {
+                    const arr = Array.isArray(r.data) ? r.data : [r.data];
+                    const names = arr.map(e => e?.name).filter(Boolean);
+                    if (arr.length === 0) return 'added records (no details)';
+                    if (arr.length === 1) return `added 1 record (${names[0]})`;
+                    return `added ${arr.length} records: ${names.join(', ')}`;
+                }
+                case 'updateMany': {
+                    const modified = r.data?.modifiedCount || 0;
+                    const names = Array.isArray(r.data?.matchedDocs) ? r.data.matchedDocs.map(e => e.name).filter(Boolean) : [];
+                    const nameStr = names.length ? `: ${names.join(', ')}` : '';
+                    return modified ? `updated ${modified} ${plural(modified, 'record')}${nameStr}` : 'performed an update (0 changed)';
+                }
+                case 'deleteMany': {
+                    const deleted = r.data?.deletedCount || 0;
+                    return deleted ? `removed ${deleted} ${plural(deleted, 'record')}` : 'performed a delete (0 removed)';
+                }
+                case 'aggregate': {
+                    const rows = Array.isArray(r.data) ? r.data : [r.data];
+                    const metrics = rows.map(row => {
+                        const keys = Object.keys(row).filter(k => typeof row[k] === 'number');
+                        return keys.map(k => `${row.name || row._id}: ${fmtNumber(row[k])}`).join(', ');
+                    });
+                    return metrics.length ? `calculated metrics: ${metrics.join(', ')}` : 'aggregation returned no valid data';
+                }
+                case 'find': {
+                    const count = Array.isArray(r.data) ? r.data.length : (r.data ? 1 : 0);
+                    return count ? `verified ${count} ${plural(count, 'record')}` : 'no matching records found';
+                }
+                default: return r.message || 'action performed';
+            }
+        });
+        return `All set — ${parts.join(', ')}.`;
+    }
+
+    // Single-action handling
+    switch (action) {
+        case 'find': {
+            const rows = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data];
+            if (rows.length === 0) return 'Searched database but found no matching employees.';
+            if (rows.length === 1) return `Found 1 employee — ${rows[0].name ?? 'Unknown'}${rows[0].department ? ` in ${rows[0].department}` : ''}.`;
+            return `Found ${rows.length} employees that match your criteria.`;
+        }
+        case 'aggregate': {
+            const rows = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data];
+            const metrics = rows.map(row => {
+                const keys = Object.keys(row).filter(k => typeof row[k] === 'number');
+                return keys.map(k => `${row.name || row._id}: ${fmtNumber(row[k])}`).join(', ');
+            });
+            return metrics.length ? `Calculated metrics: ${metrics.join(', ')}.` : 'Aggregation returned no valid data.';
+        }
+        case 'insertMany':
+        case 'create': {
+            const arr = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data];
+            const names = arr.map(e => e?.name).filter(Boolean);
+            if (arr.length === 0) return 'No records inserted.';
+            if (arr.length === 1) return `Added ${names[0]}`;
+            return `Added ${arr.length} records: ${names.join(', ')}`;
+        }
+        case 'updateMany': {
+            const modified = firstResult.data?.modifiedCount || 0;
+            const names = Array.isArray(firstResult.data?.matchedDocs) ? firstResult.data.matchedDocs.map(e => e.name).filter(Boolean) : [];
+            const nameStr = names.length ? `: ${names.join(', ')}` : '';
+            return modified ? `Updated ${modified} ${plural(modified, 'record')}${nameStr} successfully.` : 'No records updated.';
+        }
+        case 'deleteMany': {
+            const removed = firstResult.data?.deletedCount || 0;
+            return removed ? `Removed ${removed} ${plural(removed, 'record')}.` : 'No records deleted.';
+        }
+        default: return 'Request completed.';
+    }
+};
+
+// Main handler
 const handleAgentCommand = async (req, res) => {
+    const { prompt, sessionId = 'default-session' } = req.body || {};
+    const file = req.file;
+
+    if (!prompt && !file) return res.status(400).json({ error: 'A prompt or file attachment must be provided.' });
+
     try {
-        // 1. EXTRACT DATA (Populated by Multer middleware)
-        let { prompt, sessionId = 'default-session' } = req.body;
-        const file = req.file;
+        let augmentedPrompt = prompt || '';
+        if (file?.buffer) augmentedPrompt += `\n[FILE ATTACHED: ${file.originalname}]\n${file.buffer.toString('utf8')}`;
 
-        console.log(`📩 Received - Prompt: "${prompt || ''}", File: ${file ? file.originalname : "None"}`);
-
-        if (!prompt && !file) {
-            return res.status(400).json({ error: "No prompt or file provided." });
-        }
-
-        // 2. FILE PROCESSING
-        // If a file is attached, read it as text and append to the prompt
-        let augmentedPrompt = prompt || "";
-        if (file) {
-            const fileContent = file.buffer.toString('utf8'); 
-            augmentedPrompt += `\n\n[ATTACHED FILE DATA (${file.originalname})]:\n${fileContent}\n\n[INSTRUCTION]: Analyze the attached data above based on the user's request.`;
-        }
-
-        // 3. PREPARE CONTEXT
         const context = SESSION_CONTEXT[sessionId] || {};
-        const contextString = JSON.stringify(context);
+        const intentResults = await classifyIntent(augmentedPrompt, JSON.stringify(context));
+        const firstIntent = intentResults[0] || {};
 
-        // 4. CLASSIFY INTENT (Gemini)
-        const intentResults = await classifyIntent(augmentedPrompt, contextString);
-        
-        // --- AMBIGUITY / ERROR CHECK ---
-        const firstIntent = intentResults[0];
-        if (firstIntent.intent === "ERROR") return res.status(500).json(firstIntent);
-        
-        if (firstIntent.intent === "AMBIGUOUS_QUERY") {
-             return res.json({
-                status: "Clarification Needed",
-                message: "I found an ambiguous term. Did you mean one of these?",
-                details: firstIntent.suggestions,
+        if (firstIntent.intent === 'ERROR') return res.status(500).json(firstIntent);
+
+        if (firstIntent.intent === 'AMBIGUOUS_QUERY') {
+            const humanOptions = (firstIntent.suggestions || []).map(opt =>
+                opt.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+            );
+            return res.json({
+                status: 'Clarification Needed',
+                message: "Your query is ambiguous. Please choose one of the following fields:",
+                options: humanOptions,
                 meta: { originalPrompt: prompt }
-             });
+            });
         }
 
-        // 5. TRANSLATE & EXECUTE
+        if (firstIntent.intent === 'CHAT_RESPONSE') {
+            return res.json({
+                status: 'Processed',
+                response: firstIntent.response || 'Understood.',
+                results: [],
+                meta: { originalPrompt: prompt }
+            });
+        }
+
+        // Translate intent to MongoDB operations
         const dbOperations = translateIntent(intentResults);
         const finalResults = [];
 
-        for (const operation of dbOperations) {
-            if (operation.action === 'unknown' || operation.action === 'chat') {
-                finalResults.push({ status: "Processed", message: operation.response || operation.reason });
+        for (const op of dbOperations) {
+            if (!op || op.action === 'unknown') {
+                finalResults.push({ status: 'Unprocessed', message: op?.reason || 'unknown operation' });
                 continue;
             }
 
-            const dataResult = await executeQuery(operation, Employee);
-            
-            finalResults.push({ 
-                action: operation.action, 
-                data: dataResult, 
-                filterOrPipelineUsed: operation.filter || operation.pipeline || operation.data 
-            });
+            try {
+                const dataResult = await executeQuery(op, Employee);
 
-            // Update Context for Follow-ups
-            if (operation.action === 'find' || operation.action === 'aggregate') {
-                SESSION_CONTEXT[sessionId] = { 
-                    lastAction: operation.action,
-                    lastFilter: operation.filter || operation.pipeline,
-                    resultCount: Array.isArray(dataResult) ? dataResult.length : 0
-                };
-            } else if (operation.action === 'updateMany' || operation.action === 'deleteMany') {
-                 delete SESSION_CONTEXT[sessionId]; 
+                // For updateMany, attach matchedDocs for reporting names
+                if (op.action === 'updateMany' && Array.isArray(dataResult?.matchedDocs)) {
+                    finalResults.push({ action: op.action, data: dataResult, filterOrPipelineUsed: op.filter || {} });
+                } else {
+                    finalResults.push({ action: op.action, data: dataResult, filterOrPipelineUsed: op.filter || op.pipeline || op.data || {} });
+                }
+
+                if (['find', 'aggregate'].includes(op.action)) {
+                    SESSION_CONTEXT[sessionId] = { lastAction: op.action, lastFilter: op.filter || op.pipeline, resultCount: Array.isArray(dataResult) ? dataResult.length : 1 };
+                } else if (['updateMany', 'deleteMany'].includes(op.action)) {
+                    delete SESSION_CONTEXT[sessionId];
+                }
+            } catch (queryError) {
+                finalResults.push({ action: op.action, data: null, message: `Failed: ${queryError.message}` });
             }
         }
 
-        // 6. GENERATE RESPONSE TEXT
-        let aiResponseText = "Process completed.";
-        if (finalResults.length > 0) {
-            const firstRes = finalResults[0];
-            if (firstRes.message) aiResponseText = firstRes.message;
-            else if (Array.isArray(firstRes.data)) aiResponseText = `Found ${firstRes.data.length} matching records.`;
-        }
+        const aiResponse = generateAgentResponse(finalResults, intentResults);
 
         return res.json({
-            status: "Success",
-            response: aiResponseText,
+            status: 'Success',
+            response: aiResponse,
             results: finalResults,
             meta: { originalPrompt: prompt }
         });
 
     } catch (error) {
-        console.error("❌ Agent Error:", error);
-        return res.status(500).json({ error: "Agent failed.", details: error.message });
+        console.error('Agent Error:', error);
+        return res.status(500).json({ error: 'Something went wrong processing your request.', details: error.message || String(error) });
     }
 };
 
