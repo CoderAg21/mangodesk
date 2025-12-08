@@ -100,6 +100,7 @@ async function classifyIntent(userPrompt, contextString) {
         // Cleanup: Remove any potential markdown formatting
         const cleanJson = text.replace(/```json|```/g, '').trim();
         
+        console.log("AI Classification Result:", cleanJson);
         return JSON.parse(cleanJson);
     } catch (error) {
         console.error("AI Classification Failed (Parsing/API):", error);

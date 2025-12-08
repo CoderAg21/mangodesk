@@ -22,4 +22,4 @@ const employeeSchema = new mongoose.Schema({
     strict: false     // Allows us to add extra CSV fields without breaking
 });
 
-module.exports = mongoose.model('Employee', employeeSchema);
+module.exports = mongoose.models.Employee || mongoose.model('Employee', employeeSchema);
