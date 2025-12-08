@@ -1,100 +1,146 @@
-const { classifyIntent } = require('../services/intentClassifier');
-const { translateIntent } = require('../services/intentToMongo');
-const { executeQuery } = require('../services/queryEngine');
-const Employee = require('../models/Employee');
+const fs = require("fs");
+const path = require("path");
+const multer = require("multer");
 
-// In-memory storage for session context (remembering filters between chats)
-const SESSION_CONTEXT = {}; 
+const { classifyIntent } = require("../services/intentClassifier");
+const { translateIntent } = require("../services/intentToMongo");
+const { executeQuery } = require("../services/queryEngine");
+const Employee = require("../models/Employee");
+
+// ------------------------------
+// 1. MULTER DISK STORAGE SETUP
+// ------------------------------
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const folderPath = path.join(__dirname, "../data");
+
+        if (!fs.existsSync(folderPath)) {
+            fs.mkdirSync(folderPath, { recursive: true }); // create if not exists
+        }
+
+        cb(null, folderPath); // save inside backend/data
+    },
+
+    filename: (req, file, cb) => {
+        const timestamp = Date.now();
+        const safeName = file.originalname.replace(/\s+/g, "_");
+        cb(null, `${timestamp}-${safeName}`);
+    }
+});
+
+const upload = multer({ storage });
+
+// ----------------------------------
+// IN-MEMORY SESSION CONTEXT STORAGE
+// ----------------------------------
+const SESSION_CONTEXT = {};
 
 const handleAgentCommand = async (req, res) => {
     try {
-        // 1. EXTRACT DATA (Populated by Multer middleware)
-        let { prompt, sessionId = 'default-session' } = req.body;
+        let { prompt, sessionId = "default-session" } = req.body;
         const file = req.file;
 
-        console.log(`📩 Received - Prompt: "${prompt || ''}", File: ${file ? file.originalname : "None"}`);
+        console.log(`📩 Prompt: "${prompt}", File: ${file ? file.filename : "None"}`);
 
         if (!prompt && !file) {
-            return res.status(400).json({ error: "No prompt or file provided." });
+            return res.status(400).json({ error: "No input provided." });
         }
 
-        // 2. FILE PROCESSING
-        // If a file is attached, read it as text and append to the prompt
+        // ------------------------------
+        // 2. PROCESS FILE (Saved via Multer)
+        // ------------------------------
         let augmentedPrompt = prompt || "";
+
         if (file) {
-            const fileContent = file.buffer.toString('utf8'); 
-            augmentedPrompt += `\n\n[ATTACHED FILE DATA (${file.originalname})]:\n${fileContent}\n\n[INSTRUCTION]: Analyze the attached data above based on the user's request.`;
+            try {
+                const fullPath = file.path; // multer saved the file
+                const fileContent = fs.readFileSync(fullPath, "utf8");
+
+                augmentedPrompt += `
+
+[ATTACHED FILE (${file.originalname}) SAVED AT ${fullPath}]
+${fileContent}
+
+[INSTRUCTION]: Analyze the above file based on the user's request.`;
+
+            } catch (err) {
+                console.error("❌ File Read Error:", err);
+                return res.status(500).json({ error: "Failed to read saved file." });
+            }
         }
 
-        // 3. PREPARE CONTEXT
+        // ------------------------------
+        // 3. CONTEXT PREP
+        // ------------------------------
         const context = SESSION_CONTEXT[sessionId] || {};
         const contextString = JSON.stringify(context);
 
-        // 4. CLASSIFY INTENT (Gemini)
+        // ------------------------------
+        // 4. INTENT CLASSIFICATION
+        // ------------------------------
         const intentResults = await classifyIntent(augmentedPrompt, contextString);
-        
-        // --- AMBIGUITY / ERROR CHECK ---
         const firstIntent = intentResults[0];
-        if (firstIntent.intent === "ERROR") return res.status(500).json(firstIntent);
-        
-        if (firstIntent.intent === "AMBIGUOUS_QUERY") {
-             return res.json({
-                status: "Clarification Needed",
-                message: "I found an ambiguous term. Did you mean one of these?",
-                details: firstIntent.suggestions,
-                meta: { originalPrompt: prompt }
-             });
+
+        if (firstIntent.intent === "ERROR") {
+            return res.status(500).json(firstIntent);
         }
 
-        // 5. TRANSLATE & EXECUTE
+        if (firstIntent.intent === "AMBIGUOUS_QUERY") {
+            return res.json({
+                status: "Clarification Needed",
+                message: "Your query is unclear. Did you mean one of these?",
+                details: firstIntent.suggestions
+            });
+        }
+
+        // ------------------------------
+        // 5. TRANSLATE + EXECUTE QUERY
+        // ------------------------------
         const dbOperations = translateIntent(intentResults);
         const finalResults = [];
 
         for (const operation of dbOperations) {
-            if (operation.action === 'unknown' || operation.action === 'chat') {
-                finalResults.push({ status: "Processed", message: operation.response || operation.reason });
+            if (operation.action === "unknown" || operation.action === "chat") {
+                finalResults.push({
+                    status: "Processed",
+                    message: operation.response || operation.reason
+                });
                 continue;
             }
 
             const dataResult = await executeQuery(operation, Employee);
-            
-            finalResults.push({ 
-                action: operation.action, 
-                data: dataResult, 
-                filterOrPipelineUsed: operation.filter || operation.pipeline || operation.data 
+
+            finalResults.push({
+                action: operation.action,
+                data: dataResult,
+                filterOrPipelineUsed: operation.filter || operation.pipeline || operation.data
             });
 
-            // Update Context for Follow-ups
-            if (operation.action === 'find' || operation.action === 'aggregate') {
-                SESSION_CONTEXT[sessionId] = { 
+            // update context
+            if (["find", "aggregate"].includes(operation.action)) {
+                SESSION_CONTEXT[sessionId] = {
                     lastAction: operation.action,
-                    lastFilter: operation.filter || operation.pipeline,
-                    resultCount: Array.isArray(dataResult) ? dataResult.length : 0
+                    lastFilter: operation.filter || operation.pipeline
                 };
-            } else if (operation.action === 'updateMany' || operation.action === 'deleteMany') {
-                 delete SESSION_CONTEXT[sessionId]; 
+            } else if (["updateMany", "deleteMany"].includes(operation.action)) {
+                delete SESSION_CONTEXT[sessionId];
             }
-        }
-
-        // 6. GENERATE RESPONSE TEXT
-        let aiResponseText = "Process completed.";
-        if (finalResults.length > 0) {
-            const firstRes = finalResults[0];
-            if (firstRes.message) aiResponseText = firstRes.message;
-            else if (Array.isArray(firstRes.data)) aiResponseText = `Found ${firstRes.data.length} matching records.`;
         }
 
         return res.json({
             status: "Success",
-            response: aiResponseText,
-            results: finalResults,
-            meta: { originalPrompt: prompt }
+            response: "Process completed.",
+            results: finalResults
         });
 
-    } catch (error) {
-        console.error("❌ Agent Error:", error);
-        return res.status(500).json({ error: "Agent failed.", details: error.message });
+    } catch (err) {
+        console.error("❌ Agent Error:", err);
+        return res.status(500).json({ error: "Agent failed", details: err.message });
     }
 };
 
-module.exports = { handleAgentCommand };
+// EXPORT upload + handler
+module.exports = {
+    upload,
+    handleAgentCommand
+};

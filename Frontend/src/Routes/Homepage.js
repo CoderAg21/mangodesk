@@ -5,6 +5,7 @@ import {
   Menu, X, Bot, User, Loader2, Mic, FileText, LogOut, 
   Settings, Github, UserCircle, Linkedin, Camera, Save, ArrowLeft 
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 export default function Home() {
   // UI and Data State
@@ -39,8 +40,26 @@ export default function Home() {
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Speech Recognition Setup
+  // --- NEW: Fetch Conversation History for Sidebar ---
+  const fetchConversations = async () => {
+    try {
+      // Assuming you create this endpoint to get list of chats from MongoDB
+      const response = await fetch('http://localhost:5000/api/chat/history');
+      if (response.ok) {
+        const data = await response.json();
+        // data should be an array of objects: { id, title, preview }
+        setConversations(data);
+      }
+    } catch (error) {
+      console.error("Failed to load history:", error);
+    }
+  };
+
+  // Initial Load
   useEffect(() => {
+    fetchConversations();
+    
+    // Speech Recognition Setup
     if (typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       const recognition = new SpeechRecognition();
@@ -99,9 +118,9 @@ export default function Home() {
     { icon: Lightbulb, text: 'Help me brainstorm ideas', color: 'from-yellow-400 to-amber-500' },
     { icon: Globe, text: 'Plan a trip to Japan', color: 'from-orange-500 to-red-500' },
     { icon: Zap, text: 'Write a creative story', color: 'from-amber-400 to-orange-400' },
+    { icon: User, text: 'Based on what you know about me', color: 'from-blue-500 to-cyan-500' },
   ];
 
-  // Debug helper
   function logFormDataContents(formData) {
     const data = {};
     for (let [key, value] of formData.entries()) {
@@ -110,11 +129,11 @@ export default function Home() {
     console.log('✅ FormData Contents:', data);
   }
 
-  // Core Chat Logic
+  // --- CORE LOGIC UPDATED: Sending Message & Saving ---
   async function sendMessage(text) {
     if ((!text.trim() && !selectedFile) || isLoading) return;
 
-    // Optimistic UI update
+    // 1. Optimistic UI update
     let displayMessage = text;
     if (selectedFile) {
         displayMessage = text ? `${text} \n(Attached: ${selectedFile.name})` : `Analyzed ${selectedFile.name}`;
@@ -132,14 +151,20 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      // Prepare Request
+      // 2. Prepare Request
       const formData = new FormData();
       formData.append('prompt', currentInput); 
+      
+      // Send Conversation ID if it exists (to append to existing chat)
+      if (currentConversationId) {
+        formData.append('conversationId', currentConversationId);
+      }
+
       if (currentFile) formData.append('file', currentFile); 
 
       logFormDataContents(formData);
 
-      // API Call
+      // 3. API Call
       const response = await fetch('http://localhost:5000/api/brain/command', {
         method: 'POST',
         body: formData, 
@@ -149,7 +174,16 @@ export default function Home() {
 
       const data = await response.json();
       const aiMessage = { role: 'ai', text: data.response || "Process completed.", id: Date.now() };
+      
       setMessages(prev => [...prev, aiMessage]);
+
+      // 4. Handle New Conversation Creation
+      // If we didn't have an ID before, but the server returned one, save it.
+      if (!currentConversationId && data.conversationId) {
+        setCurrentConversationId(data.conversationId);
+        // Refresh sidebar to show the new chat
+        fetchConversations();
+      }
 
     } catch (error) {
       console.error('Fetch error:', error);
@@ -165,22 +199,36 @@ export default function Home() {
     }
   }
 
-  // Navigation Logic
+  // --- UPDATED: New Chat Logic ---
   function handleNewChat() {
-    setMessages([]);
+    setMessages([]); // Clear current view
     setInput('');
     setSelectedFile(null);
     setIsLoading(false);
-    setCurrentConversationId(null);
+    setCurrentConversationId(null); // Reset ID so next message creates new DB entry
     setSidebarOpen(false);
   }
 
-  function loadConversation(conversationId) {
-    const conversation = conversations.find(conv => conv.id === conversationId);
-    if (conversation) {
-      setMessages(conversation.messages || []);
-      setCurrentConversationId(conversationId);
-      setSidebarOpen(false);
+  // --- UPDATED: Load specific chat from DB ---
+  async function loadConversation(conversationId) {
+    if (conversationId === currentConversationId) return;
+
+    setIsLoading(true);
+    setSidebarOpen(false); // Close sidebar on mobile
+    
+    try {
+      // Fetch messages for this specific conversation ID
+      const response = await fetch(`http://localhost:5000/api/chat/${conversationId}`);
+      if (response.ok) {
+        const data = await response.json();
+        // data.messages should be array of { role: 'user'|'ai', text: '...' }
+        setMessages(data.messages || []);
+        setCurrentConversationId(conversationId);
+      }
+    } catch (error) {
+      console.error("Error loading chat:", error);
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -301,7 +349,7 @@ export default function Home() {
                             </div>
                          </div>
                        </div>
-                     </div>
+                      </div>
 
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
@@ -396,14 +444,14 @@ export default function Home() {
                 </div>
               ) : (
                 conversations.map((conv, index) => (
-                  <motion.button key={conv.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.05 }} whileHover={{ x: 4 }} onClick={() => loadConversation(conv.id)} className={`w-full text-left p-3 rounded-xl transition-all duration-200 group ${currentConversationId === conv.id ? 'bg-amber-500/10 border border-amber-500/20' : 'hover:bg-white/5'}`}>
+                  <motion.button key={conv.id || conv._id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.05 }} whileHover={{ x: 4 }} onClick={() => loadConversation(conv.id || conv._id)} className={`w-full text-left p-3 rounded-xl transition-all duration-200 group ${(currentConversationId === conv.id || currentConversationId === conv._id) ? 'bg-amber-500/10 border border-amber-500/20' : 'hover:bg-white/5'}`}>
                     <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${currentConversationId === conv.id ? 'bg-amber-500/20' : 'bg-white/5 group-hover:bg-white/10'}`}>
-                        <MessageSquare className={`w-4 h-4 ${currentConversationId === conv.id ? 'text-amber-400' : 'text-white/40'}`} />
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${(currentConversationId === conv.id || currentConversationId === conv._id) ? 'bg-amber-500/20' : 'bg-white/5 group-hover:bg-white/10'}`}>
+                        <MessageSquare className={`w-4 h-4 ${(currentConversationId === conv.id || currentConversationId === conv._id) ? 'text-amber-400' : 'text-white/40'}`} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium truncate ${currentConversationId === conv.id ? 'text-white' : 'text-white/80'}`}>{conv.title}</p>
-                        <p className="text-xs text-white/30 truncate">{conv.preview}</p>
+                        <p className={`text-sm font-medium truncate ${(currentConversationId === conv.id || currentConversationId === conv._id) ? 'text-white' : 'text-white/80'}`}>{conv.title || "New Conversation"}</p>
+                        <p className="text-xs text-white/30 truncate">{conv.preview || "No preview available"}</p>
                       </div>
                     </div>
                   </motion.button>
@@ -417,12 +465,12 @@ export default function Home() {
                 {showUserMenu && (
                   <motion.div initial={{ opacity: 0, y: 10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: 0.95 }} className="absolute bottom-full left-4 right-4 mb-2 bg-slate-800/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl overflow-hidden p-1 z-50">
                     
-                    <button onClick={() => { setShowProfileModal(true); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-sm text-white/90">
+                    <Link to="/dashboard" className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-sm text-white/90">
                       <UserCircle className="w-4 h-4 text-amber-400" /> Go to Dashboard
-                    </button>
-                    <button onClick={() => { setShowProfileModal(true); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-sm text-white/90">
+                    </Link>
+                    <Link to="/export" className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-sm text-white/90">
                       <UserCircle className="w-4 h-4 text-amber-400" />Export
-                    </button>
+                    </Link>
 
                     
                     <button onClick={() => { setShowProfileModal(true); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-sm text-white/90">

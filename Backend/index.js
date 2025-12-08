@@ -112,30 +112,6 @@ app.get('/api/employees', (req, res) => {
 
 app.use('/api/brain', agentRoutes);
 
-
-// Route: Analyze Intent (handles optional file upload)
-app.post('/api/analyze-intent', upload.single('file'), async (req, res) => {
-    try {
-        const { prompt } = req.body;
-        const uploadedFile = req.file;
-
-        runTests(prompt); 
-
-        if (!prompt && !uploadedFile) {
-            return res.status(400).json({ error: "Prompt or file attachment is required" });
-        }
-
-        const intentData = await parseUserIntent(prompt);
-        
-        if (intentData.error) return res.status(500).json(intentData);
-        res.json(intentData);
-
-    } catch (error) {
-        console.error("Server Error:", error);
-        res.status(500).json({ error: "Internal Server Error", details: error.message });
-    }
-});
-
 // Routes: Google Authentication
 app.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
 
