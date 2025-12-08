@@ -1,9 +1,38 @@
-// controllers/agentController.js
-const { classifyIntent } = require('../services/intentClassifier');
-const { translateIntent } = require('../services/intentToMongo');
-const { executeQuery } = require('../services/queryEngine');
-const Employee = require('../models/Employee');
+const fs = require("fs");
+const path = require("path");
+const multer = require("multer");
 
+const { classifyIntent } = require("../services/intentClassifier");
+const { translateIntent } = require("../services/intentToMongo");
+const { executeQuery } = require("../services/queryEngine");
+const Employee = require("../models/Employee");
+
+// ------------------------------
+// 1. MULTER DISK STORAGE SETUP
+// ------------------------------
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const folderPath = path.join(__dirname, "../data");
+
+        if (!fs.existsSync(folderPath)) {
+            fs.mkdirSync(folderPath, { recursive: true }); // create if not exists
+        }
+
+        cb(null, folderPath); // save inside backend/data
+    },
+
+    filename: (req, file, cb) => {
+        const timestamp = Date.now();
+        const safeName = file.originalname.replace(/\s+/g, "_");
+        cb(null, `${timestamp}-${safeName}`);
+    }
+});
+
+const upload = multer({ storage });
+
+// ----------------------------------
+// IN-MEMORY SESSION CONTEXT STORAGE
+// ----------------------------------
 const SESSION_CONTEXT = {};
 
 // Helper functions
@@ -115,9 +144,41 @@ const handleAgentCommand = async (req, res) => {
     if (!prompt && !file) return res.status(400).json({ error: 'A prompt or file attachment must be provided.' });
 
     try {
-        let augmentedPrompt = prompt || '';
-        if (file?.buffer) augmentedPrompt += `\n[FILE ATTACHED: ${file.originalname}]\n${file.buffer.toString('utf8')}`;
+        let { prompt, sessionId = "default-session" } = req.body;
+        const file = req.file;
 
+        console.log(`📩 Prompt: "${prompt}", File: ${file ? file.filename : "None"}`);
+
+        if (!prompt && !file) {
+            return res.status(400).json({ error: "No input provided." });
+        }
+
+        // ------------------------------
+        // 2. PROCESS FILE (Saved via Multer)
+        // ------------------------------
+        let augmentedPrompt = prompt || "";
+
+        if (file) {
+            try {
+                const fullPath = file.path; // multer saved the file
+                const fileContent = fs.readFileSync(fullPath, "utf8");
+
+                augmentedPrompt += `
+
+[ATTACHED FILE (${file.originalname}) SAVED AT ${fullPath}]
+${fileContent}
+
+[INSTRUCTION]: Analyze the above file based on the user's request.`;
+
+            } catch (err) {
+                console.error("❌ File Read Error:", err);
+                return res.status(500).json({ error: "Failed to read saved file." });
+            }
+        }
+
+        // ------------------------------
+        // 3. CONTEXT PREP
+        // ------------------------------
         const context = SESSION_CONTEXT[sessionId] || {};
         const intentResults = await classifyIntent(augmentedPrompt, JSON.stringify(context));
         const firstIntent = intentResults[0] || {};
@@ -190,4 +251,7 @@ const handleAgentCommand = async (req, res) => {
     }
 };
 
-module.exports = { handleAgentCommand };
+module.exports = {
+    handleAgentCommand,
+    upload
+};

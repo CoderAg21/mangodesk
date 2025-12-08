@@ -435,68 +435,6 @@ export default function Dashboard() {
 
         {/* Charts Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
-          
-          {/* Gender Ratio */}
-          <ChartCard title="Gender Ratio" delay={0} darkMode={darkMode} icon={Users}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={demographics.genderData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={90}
-                  paddingAngle={5}
-                  dataKey="value"
-                  animationBegin={0}
-                  animationDuration={1500}
-                >
-                  {demographics.genderData?.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={[colors.info[0], colors.danger[0]][index]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
-                <Legend wrapperStyle={{ color: textColor }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </ChartCard>
-
-          {/* Age Demographics */}
-          <ChartCard title="Age Demographics" delay={0.1} darkMode={darkMode} icon={Users}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={demographics.ageData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                <XAxis dataKey="name" tick={{ fill: textColor }} />
-                <YAxis tick={{ fill: textColor }} />
-                <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
-                <Bar dataKey="value" fill={colors.success[0]} radius={[8, 8, 0, 0]} animationDuration={1500} />
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartCard>
-
-          {/* Education Levels */}
-          <ChartCard title="Education Levels" delay={0.2} darkMode={darkMode} icon={Activity}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={demographics.eduData}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={90}
-                  dataKey="value"
-                  animationBegin={0}
-                  animationDuration={1500}
-                >
-                  {demographics.eduData?.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={colors.gradient[index % colors.gradient.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
-                <Legend wrapperStyle={{ color: textColor }} />
-              </PieChart>
-            </ResponsiveContainer>
-          </ChartCard>
-
           {/* Remote Work */}
           <ChartCard title="Remote Work %" delay={0.3} darkMode={darkMode} icon={Building2}>
             <ResponsiveContainer width="100%" height="100%">
@@ -510,6 +448,20 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </ChartCard>
 
+             {/* Performance by Dept */}
+          <ChartCard title="Performance by Dept" delay={0.5} darkMode={darkMode} icon={TrendingUp}>
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={hrStats.perfData}>
+                <PolarGrid stroke={gridColor} />
+                <PolarAngleAxis dataKey="name" tick={{ fill: textColor, fontSize: 10 }} />
+                <PolarRadiusAxis tick={{ fill: textColor }} domain={[0, 5]} />
+                <Radar name="Score" dataKey="value" stroke={colors.danger[0]} fill={colors.danger[0]} fillOpacity={0.3} animationDuration={1500} />
+                <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
+              </RadarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          
           {/* Headcount by Dept */}
           <ChartCard title="Headcount by Department" fullWidth delay={0.4} darkMode={darkMode} icon={Building2}>
             <ResponsiveContainer width="100%" height="100%">
@@ -523,18 +475,7 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </ChartCard>
 
-          {/* Performance by Dept */}
-          <ChartCard title="Performance by Dept" delay={0.5} darkMode={darkMode} icon={TrendingUp}>
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={hrStats.perfData}>
-                <PolarGrid stroke={gridColor} />
-                <PolarAngleAxis dataKey="name" tick={{ fill: textColor, fontSize: 10 }} />
-                <PolarRadiusAxis tick={{ fill: textColor }} domain={[0, 5]} />
-                <Radar name="Score" dataKey="value" stroke={colors.danger[0]} fill={colors.danger[0]} fillOpacity={0.3} animationDuration={1500} />
-                <Tooltip content={<CustomTooltip darkMode={darkMode} />} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </ChartCard>
+       
 
           {/* Attrition by Dept */}
           <ChartCard title="Attrition by Dept" delay={0.6} darkMode={darkMode} icon={Users}>
@@ -590,18 +531,6 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </ChartCard>
 
-          {/* Salary vs Experience */}
-          <ChartCard title="Salary vs Experience" delay={1} darkMode={darkMode} icon={Activity}>
-            <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart>
-                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
-                <XAxis dataKey="experience" name="Years" tick={{ fill: textColor }} label={{ value: 'Years Experience', position: 'bottom', fill: textColor }} />
-                <YAxis dataKey="salary" name="Salary" tick={{ fill: textColor }} tickFormatter={(v) => `$${(v/1000)}k`} />
-                <Tooltip content={<CustomTooltip darkMode={darkMode} />} cursor={{ strokeDasharray: '3 3' }} />
-                <Scatter name="Employees" data={scatterStats} fill={colors.info[0]} fillOpacity={0.6} animationDuration={1500} />
-              </ScatterChart>
-            </ResponsiveContainer>
-          </ChartCard>
 
           {/* Salary vs Performance */}
           <ChartCard title="Salary vs Performance" delay={1.1} darkMode={darkMode} icon={Activity}>
