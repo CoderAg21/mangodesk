@@ -128,7 +128,7 @@ app.get("/google", passport.authenticate("google", { scope: ["profile", "email"]
 app.get("/google/callback",
     passport.authenticate("google", {
         failureRedirect: "http://localhost:3000/login?error=unauthorized",
-        successRedirect: "http://localhost:3000",
+        successRedirect: "http://localhost:3000/home",
     })
 );
 

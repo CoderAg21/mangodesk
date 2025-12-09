@@ -25,7 +25,7 @@ export default function Home() {
 
   // Profile Data
   const [userProfile, setUserProfile] = useState({
-    name: "Abhay Agrahari",
+    name: "User21",
     username: "coderAg21",
     focus: "Full Stack & Robotics (ROS 2)",
     github: "coderAg21",
@@ -356,7 +356,8 @@ export default function Home() {
                     <button onClick={() => { setShowProfileModal(true); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-sm text-white/90">
                       <UserCircle className="w-4 h-4 text-amber-400" /> Your Profile
                     </button>
-                    <button onClick={() => setShowUserMenu(false)} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-sm text-red-400 hover:text-red-300">
+                    {/* MODIFIED: Logout Redirect */}
+                    <button onClick={() => window.location.href = "http://localhost:5000/logout"} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-sm text-red-400 hover:text-red-300">
                       <LogOut className="w-4 h-4" /> Log out
                     </button>
                   </motion.div>

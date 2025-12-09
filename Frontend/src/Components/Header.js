@@ -19,8 +19,11 @@ export default function Header() {
     { name: 'About', href: '/about' },
     { name: 'Our Team', href: '/team' },
     { name: 'Contact Us', href: '/contact' },
-
   ];
+
+  const handleGoogleLogin = () => {
+    window.location.href = "http://localhost:5000/google";
+  };
 
   return (
     <motion.nav
@@ -76,16 +79,16 @@ export default function Header() {
               Sign Up
             </motion.button>
             </Link>
-            <Link to='/login'>
+            
+            {/* Modified Login Button - Redirects to Backend Google Auth */}
             <motion.button
               whileHover={{ scale: 1.05, boxShadow: "0 20px 40px rgba(251, 146, 60, 0.3)" }}
               whileTap={{ scale: 0.95 }}
-              
+              onClick={handleGoogleLogin}
               className="px-6 py-2.5 text-sm font-semibold bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl shadow-lg shadow-orange-500/25 hover:shadow-orange-500/40 transition-all duration-300"
               >
                 Login
             </motion.button>
-                </Link>
           </div>
 
           {/* Mobile Menu Button */}
@@ -119,7 +122,10 @@ export default function Header() {
                 </a>
               ))}
               <div className="pt-4 border-t border-white/10 space-y-3">
-                <button className="w-full py-3 text-white/80 hover:text-white transition-colors">
+                <button 
+                  onClick={handleGoogleLogin}
+                  className="w-full py-3 text-white/80 hover:text-white transition-colors"
+                >
                   Sign In
                 </button>
                 <button className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-600 rounded-xl font-semibold">
