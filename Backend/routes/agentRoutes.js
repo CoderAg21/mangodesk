@@ -1,13 +1,12 @@
 const express = require('express');
 const router = express.Router();
-
-const {
-    upload,
-    handleAgentCommand
-} = require("../controllers/agentController");
+const { handleAgentCommand,getUserHistory, upload } = require('../controllers/agentController');
+const { ensureAuthenticated } = require('../middlewares/authMiddleware');
 
 // route with multer file upload
-router.post('/command', upload.single('file'), handleAgentCommand);
+router.post('/command',ensureAuthenticated, upload.single('file'), handleAgentCommand);
+
+router.get('/history', ensureAuthenticated, getUserHistory);
 
 module.exports = router;
 

@@ -8,15 +8,29 @@ const passport = require("passport");
 const moment = require('moment');
 const fs = require('fs');         
 const csv = require('csv-parser'); 
-
+const Conversation = require('./models/conversationModel');
+const axios = require('axios')
 const agentRoutes = require('./routes/agentRoutes');
 const passportSetup = require("./config/passport");
 const contactRoutes = require("./routes/contactRoutes");
+const { setGlobalDispatcher, ProxyAgent } = require("undici");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mangodesk';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mangoDesk';
 const csvFilePath = path.join(__dirname, 'data', 'employees.csv'); // Define CSV path
+
+// Proxy COnfiguration
+
+if (process.env.PROXY_URL) {
+     console.log(`[System] Configuring Proxy: ${process.env.PROXY_URL}`);
+     const dispatcher = new ProxyAgent(process.env.PROXY_URL);
+     setGlobalDispatcher(dispatcher);
+ }
+
+
+
+
 
 //Helper Functions
 

@@ -1,3 +1,206 @@
+// controllers/agentController.js
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
+
+// --- MODELS ---
+const Conversation = require('../models/conversationModel'); 
+const Employee = require('../models/Employee'); 
+
+// SERVICES
+const { classifyIntent } = require("../services/intentClassifier");
+const { translateIntent } = require("../services/intentToMongo");
+const { executeQuery } = require("../services/queryEngine");
+const { executeCSVQuery } = require("../services/csvEngine"); 
+
+// CONFIGURATION 
+const SESSION_CONTEXT = {}; // In-memory storage for short-term context (follow-up questions)
+
+// Multer Disk Storage
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const folderPath = path.join(__dirname, "../data");
+        if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
+        cb(null, folderPath);
+    },
+    filename: (req, file, cb) => {
+        cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, "_")}`);
+    }
+});
+const upload = multer({ storage });
+
+// HELPER: Human-Like Response Generator
+const plural = (n, singular, pluralForm) => (n === 1 ? singular : (pluralForm || singular + 's'));
+
+const generateAgentResponse = (results = [], intentResults = []) => {
+    if (!results || results.length === 0) return "I completed the request, but no data was returned.";
+
+    const firstIntent = intentResults[0] || {};
+    const firstResult = results[0] || {};
+    const action = firstResult.action || 'unknown';
+
+    // 1. Chat Response
+    if (firstIntent.intent === 'CHAT_RESPONSE') return firstIntent.response || "Understood.";
+
+    // 2. Database Actions
+    if (results.length > 0) {
+        switch (action) {
+            case 'find': {
+                const count = Array.isArray(firstResult.data) ? firstResult.data.length : (firstResult.data ? 1 : 0);
+                if (count === 0) return "I searched the database but found no matching records.";
+                if (count === 1) return `I found **one record** matching your criteria.`;
+                return `I found **${count} ${plural(count, 'record')}** matching your request.`;
+            }
+            case 'insertMany':
+            case 'create': {
+                // Handle single or array inserts
+                const count = Array.isArray(firstResult.data) ? firstResult.data.length : 1;
+                return `I successfully added **${count} new ${plural(count, 'record')}** to the database.`;
+            }
+            case 'updateMany': {
+                const modified = firstResult.data?.modifiedCount || 0;
+                return `I updated **${modified} ${plural(modified, 'record')}** in the database.`;
+            }
+            case 'deleteMany': {
+                const deleted = firstResult.data?.deletedCount || 0;
+                return `I removed **${deleted} ${plural(deleted, 'record')}** from the database.`;
+            }
+            case 'aggregate':
+                return "I calculated the metrics you requested. You can see the details below.";
+            default: 
+                return firstResult.message || "Operation completed successfully.";
+        }
+    }
+    return "I processed your request.";
+};
+
+
+// --- MAIN HANDLER ---
+const handleAgentCommand = async (req, res) => {
+    try {
+        let { prompt, sessionId } = req.body;
+        const file = req.file;
+
+        //  Get Email from Session (Passport.js) 
+        const userEmail = req.user ? req.user.email : "guest@mangodesk.com"; 
+
+        if (!sessionId) sessionId = `session_${Date.now()}`;
+
+        // 1. SAVE USER INPUT TO DB 
+        let chat = await Conversation.findOne({ sessionId });
+        if (!chat) {
+            chat = new Conversation({ sessionId, userEmail, messages: [] });
+        }
+
+        const userMsgText = prompt || (file ? `Uploaded file: ${file.originalname}` : "Empty Prompt");
+        chat.messages.push({ sender: 'user', text: userMsgText });
+        await chat.save(); 
+
+        // 2. PREPARE INPUT 
+        let aiResponseText = "";
+        let finalResults = [];
+        let detectedIntent = "UNKNOWN";
+
+        if (prompt || file) {
+            let fullInput = prompt || "";
+            if (file) {
+                 const fileContent = fs.readFileSync(file.path, 'utf8');
+                 fullInput += `\n[Context from file]: ${fileContent}`;
+            }
+
+            // 3. CLASSIFY INTENT 
+            const context = SESSION_CONTEXT[sessionId] || {};
+            const intentResult = await classifyIntent(fullInput, JSON.stringify(context)); 
+            const firstIntent = intentResult[0] || {};
+            detectedIntent = firstIntent.intent || "GENERAL_CHAT";
+
+            // 4. HANDLE SPECIAL STATES 
+            if (detectedIntent === 'ERROR') {
+                aiResponseText = firstIntent.message || "I encountered an error processing that.";
+            } else if (detectedIntent === 'AMBIGUOUS_QUERY') {
+                aiResponseText = `I'm not sure which field you mean. Did you mean: ${firstIntent.suggestions?.join(', ')}?`;
+            } else if (detectedIntent === "CHAT_RESPONSE") {
+                aiResponseText = firstIntent.response;
+            } else {
+                // 5. EXECUTE DATABASE LOGIC
+                const dbOperations = translateIntent(intentResult);
+                
+                for (const op of dbOperations) {
+                    if (!op || op.action === 'unknown') continue;
+
+                    
+                    try {
+                        const data = await executeQuery(op, Employee);
+                        
+                        finalResults.push({ 
+                            action: op.action, 
+                            data: data,
+                            source: 'MongoDB' 
+                        });
+
+                        
+                        if (['find', 'aggregate'].includes(op.action)) {
+                            SESSION_CONTEXT[sessionId] = { 
+                                lastAction: op.action, 
+                                resultCount: Array.isArray(data) ? data.length : 1 
+                            };
+                        }
+                    } catch (err) {
+                        console.error("DB Op Failed:", err.message);
+                        finalResults.push({ action: op.action, status: 'Failed', message: err.message });
+                    }
+                }
+                
+                // Generate Human Response
+                aiResponseText = generateAgentResponse(finalResults, intentResult);
+            }
+        }
+
+        // 6. SAVE AI RESPONSE TO DB 
+        chat.messages.push({
+            sender: 'ai',
+            text: aiResponseText,
+            intent: detectedIntent
+        });
+        chat.lastUpdated = new Date();
+        await chat.save();
+
+        // 7. SEND RESPONSE TO FRONTEND
+        res.json({
+            success: true,
+            sessionId: sessionId,
+            reply: aiResponseText,
+            results: finalResults
+        });
+
+    } catch (error) {
+        console.error("Agent Controller Error:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// --- GET HISTORY HANDLER (Sidebar) ---
+const getUserHistory = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
+
+        const conversations = await Conversation.find({ userEmail: req.user.email })
+            .sort({ lastUpdated: -1 });
+
+        res.json({ success: true, history: conversations });
+    } catch (error) {
+        console.error("History Error:", error);
+        res.status(500).json({ success: false, message: "Failed to load history" });
+    }
+};
+
+module.exports = {
+    handleAgentCommand,
+    getUserHistory,
+    upload
+};
+
+
 // const fs = require("fs");
 // const path = require("path");
 // const multer = require("multer");
@@ -287,244 +490,3 @@
 
 
 
-const fs = require("fs");
-const path = require("path");
-const multer = require("multer");
-
-// NOTE: These services must be implemented to return results and intents as expected.
-const { classifyIntent } = require("../services/intentClassifier");
-const { translateIntent } = require("../services/intentToMongo");
-const { executeQuery } = require("../services/queryEngine");
-// --- IMPORT NEW CSV ENGINE ---
-const { executeCSVQuery } = require("../services/csvEngine"); 
-const Employee = require("../models/Employee"); 
-
-// ------------------------------
-// 1. MULTER DISK STORAGE SETUP
-// ------------------------------
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        const folderPath = path.join(__dirname, "../data");
-        if (!fs.existsSync(folderPath)) {
-            fs.mkdirSync(folderPath, { recursive: true });
-        }
-        cb(null, folderPath);
-    },
-    filename: (req, file, cb) => {
-        const timestamp = Date.now();
-        // Force CSV extension if it's a CSV file to ensure engine picks it up
-        const ext = path.extname(file.originalname) || '.csv';
-        const safeName = file.originalname.replace(/\s+/g, "_");
-        cb(null, `${timestamp}-${safeName}`);
-    }
-});
-
-const upload = multer({ storage });
-const SESSION_CONTEXT = {};
-
-const safeNumber = v => (typeof v === 'number' && !Number.isNaN(v)) ? v : null;
-const fmtNumber = n => {
-    const num = safeNumber(n);
-    if (num == null) return 'N/A';
-    return Number(num).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-};
-const fmtCurrency = n => {
-    const num = safeNumber(n);
-    if (num == null) return 'N/A';
-    return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-};
-const plural = (n, singular, pluralForm) => (n === 1 ? singular : (pluralForm || singular + 's'));
-
-/**
- * 3. generateAgentResponse(results, intentResults)
- */
-const generateAgentResponse = (results = [], intentResults = []) => {
-    if (!results || results.length === 0) return "I completed the request, but there was no data returned.";
-
-    const firstIntent = intentResults[0] || {};
-    // Check if we have CSV results mixed in
-    const firstResult = results[0] || {};
-    const action = firstResult.action || 'unknown';
-
-    if (firstIntent.intent === 'CHAT_RESPONSE') return firstIntent.response || "Okay, I've noted that.";
-    if (action === 'unknown') return firstResult.message || "I couldn't translate that into an action.";
-
-    // --- Multi-Step Action Handling ---
-    if (results.length > 1) {
-        const parts = results.map(r => {
-            const source = r.source === 'CSV' ? '(CSV)' : '(DB)'; // Distinguish source
-            switch (r.action) {
-                case 'insertMany':
-                case 'create': {
-                    const arr = Array.isArray(r.data) ? r.data : [r.data].filter(Boolean);
-                    const names = arr.map(e => e?.name).filter(Boolean);
-                    const count = arr.length;
-                    if (count === 0) return `tried to add records ${source} (no details)`;
-                    return `**added ${count} ${plural(count, 'record')} ${source}**`;
-                }
-                case 'updateMany': {
-                    const modified = r.data?.modifiedCount || 0;
-                    if (modified === 0) return `performed an update ${source} (0 changed)`;
-                    return `**updated ${modified} ${plural(modified, 'record')} ${source}**`;
-                }
-                case 'deleteMany': {
-                    const deleted = r.data?.deletedCount || 0;
-                    return deleted ? `**removed ${deleted} ${plural(deleted, 'record')} ${source}**` : `performed a deletion ${source} (0 removed)`;
-                }
-                case 'find': {
-                    const count = Array.isArray(r.data) ? r.data.length : (r.data ? 1 : 0);
-                    return count ? `**retrieved ${count} records ${source}**` : `found no matching records ${source}`;
-                }
-                default: return r.message || 'completed an action';
-            }
-        });
-        const final = parts.length === 1 ? parts[0] : parts.slice(0, -1).join(', ') + ' and ' + parts.slice(-1);
-        return `I've finished the sequence: I **${final}**.`;
-    }
-
-    // --- Single-Step Action Handling (Unified) ---
-    switch (action) {
-        case 'find': {
-            const rows = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data].filter(Boolean);
-            const count = rows.length;
-            const source = firstResult.source === 'CSV' ? 'CSV file' : 'database';
-            if (count === 0) return `I searched the ${source}, but I didn't find any employees matching your criteria.`;
-            if (count === 1) {
-                const e = rows[0];
-                return `I found **${e.name || 'one employee'}** in the ${source}${e.department ? ` (${e.department})` : ''}.`;
-            }
-            return `I found **${count}** employees in the ${source} matching that search.`;
-        }
-        case 'insertMany':
-        case 'create': {
-            const arr = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data].filter(Boolean);
-            const count = arr.length;
-            const source = firstResult.source === 'CSV' ? 'CSV file' : 'database';
-            if (count === 0) return 'No records were inserted.';
-            return `I successfully added **${count} new records** to the ${source}.`;
-        }
-        case 'updateMany': {
-            const modified = firstResult.data?.modifiedCount || 0;
-            const source = firstResult.source === 'CSV' ? 'CSV file' : 'database';
-            if (modified > 0) return `I've successfully updated **${modified} ${plural(modified, 'record')}** in the ${source}.`;
-            return `No records were changed in the ${source}.`;
-        }
-        case 'deleteMany': {
-            const removed = firstResult.data?.deletedCount || 0;
-            const source = firstResult.source === 'CSV' ? 'CSV file' : 'database';
-            return removed ? `I have removed **${removed} ${plural(removed, 'record')}** from the ${source}.` : 'No records matched for deletion.';
-        }
-        default: return 'The operation completed successfully.';
-    }
-};
-
-// 4. MAIN HANDLER
-
-const handleAgentCommand = async (req, res) => {
-    const { prompt, sessionId = 'default-session' } = req.body || {};
-    const file = req.file;
-
-    if (!prompt && !file) return res.status(400).json({ error: 'A prompt or file attachment must be provided.' });
-
-    try {
-        let { prompt: userPrompt, sessionId: currentSessionId = "default-session" } = req.body;
-        const attachedFile = req.file;
-
-        console.log(`📩 Prompt: "${userPrompt}", File: ${attachedFile ? attachedFile.filename : "None"}`);
-
-        // 2. PROCESS FILE
-        let augmentedPrompt = userPrompt || "";
-
-        if (attachedFile) {
-            try {
-                const fullPath = attachedFile.path;
-                const fileContent = fs.readFileSync(fullPath, "utf8");
-                augmentedPrompt += `\n[ATTACHED FILE SAVED AT ${fullPath}]\n${fileContent}\n[INSTRUCTION]: Analyze the file.`;
-            } catch (err) {
-                console.error("❌ File Read Error:", err);
-                return res.status(500).json({ error: "Failed to read saved file." });
-            }
-        }
-
-        // 3. CONTEXT PREP & INTENT
-        const context = SESSION_CONTEXT[currentSessionId] || {};
-        const intentResults = await classifyIntent(augmentedPrompt, JSON.stringify(context));
-        const firstIntent = intentResults[0] || {};
-
-        if (firstIntent.intent === 'ERROR') return res.status(500).json(firstIntent);
-        if (firstIntent.intent === 'CHAT_RESPONSE') return res.json({ status: 'Processed', response: firstIntent.response, results: [] });
-
-        // --- Execute Operations ---
-        const dbOperations = translateIntent(intentResults);
-        const finalResults = [];
-
-        for (const op of dbOperations) {
-            if (!op || op.action === 'unknown') {
-                finalResults.push({ status: 'Unprocessed', message: op?.reason || 'unknown operation' });
-                continue;
-            }
-
-           
-            // A. Execute MongoDB Operation
-        
-            try {
-                const mongoResult = await executeQuery(op, Employee);
-                if (mongoResult) {
-                     // Add mongo result
-                    finalResults.push({ 
-                        source: 'MongoDB',
-                        action: op.action, 
-                        data: mongoResult, 
-                        filterOrPipelineUsed: op.filter || op.pipeline 
-                    });
-                }
-            } catch (mongoErr) {
-                console.warn("MongoDB Query skipped or failed:", mongoErr.message);
-            }
-
-         
-            // B. Execute CSV Operation (Syncs manipulations)
-            try {
-                // We pass the same operation object to the CSV Engine
-                const csvResult = await executeCSVQuery(op);
-                if (csvResult && !csvResult.message) {
-                    finalResults.push({
-                        source: 'CSV',
-                        action: op.action,
-                        data: csvResult,
-                        filterOrPipelineUsed: op.filter || op.pipeline
-                    });
-                }
-            } catch (csvErr) {
-                console.warn("CSV Query skipped or failed:", csvErr.message);
-            }
-            
-            // Update Context (Prioritize Mongo count if available, else CSV)
-            if (['find', 'aggregate'].includes(op.action)) {
-                SESSION_CONTEXT[currentSessionId] = {
-                    lastAction: op.action,
-                    lastFilter: op.filter || op.pipeline,
-                    resultCount: finalResults.length
-                };
-            }
-        }
-
-        const aiResponse = generateAgentResponse(finalResults, intentResults);
-
-        return res.json({
-            status: 'Success',
-            response: aiResponse,
-            results: finalResults,
-            meta: { originalPrompt: userPrompt }
-        });
-
-    } catch (error) {
-        console.error('Agent Error:', error);
-        return res.status(500).json({ error: 'Error processing request.', details: error.message });
-    }
-};
-
-module.exports = {
-    handleAgentCommand,
-    upload
-};
