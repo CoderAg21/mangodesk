@@ -5,6 +5,7 @@ const multer = require("multer");
 const { classifyIntent } = require("../services/intentClassifier");
 const { translateIntent } = require("../services/intentToMongo");
 const { executeQuery } = require("../services/queryEngine");
+const { executeCSVQuery } = require("../services/csvEngine");
 const Employee = require("../models/Employee");
 
 const storage = multer.diskStorage({
@@ -22,6 +23,64 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 const SESSION_CONTEXT = {};
+
+// --- INTELLIGENT SCHEMA MAPPING ---
+const SCHEMA_MAP = {
+    // Identity
+    'id': 'employee_id', 'emp_id': 'employee_id', 'employee id': 'employee_id',
+    'full name': 'name', 'fullname': 'name',
+    'dept': 'department', 'division': 'department', 'unit': 'department',
+    'job': 'role', 'title': 'role', 'position': 'role', 'designation': 'role',
+    'nation': 'country', 'region': 'country',
+    'location': 'office_location', 'office': 'office_location', 'place': 'office_location', 'city': 'office_location',
+    // Dates
+    'joined': 'hire_date', 'hired': 'hire_date', 'start date': 'hire_date', 'joining': 'hire_date',
+    'left': 'termination_date', 'fired': 'termination_date', 'quit': 'termination_date', 'exit': 'termination_date',
+    // Compensation
+    'salary': 'salary_usd', 'pay': 'salary_usd', 'wage': 'salary_usd', 'income': 'salary_usd', 'ctc': 'salary_usd',
+    'bonus': 'bonus_usd', 'incentive': 'bonus_usd', 'commission': 'bonus_usd',
+    'stock': 'stock_options', 'stocks': 'stock_options', 'equity': 'stock_options', 'shares': 'stock_options',
+    // Performance & Metrics
+    'score': 'performance_score', 'rating': 'performance_score', 'performance': 'performance_score',
+    'promotion': 'promotion_count', 'promotions': 'promotion_count', 'promoted': 'promotion_count',
+    'project': 'project_count', 'projects': 'project_count',
+    'deal': 'deals_closed', 'deals': 'deals_closed', 'sales': 'deals_closed', 'closed': 'deals_closed',
+    'deal size': 'avg_deal_size_usd', 'avg deal': 'avg_deal_size_usd',
+    'revenue': 'client_revenue_usd', 'generated': 'client_revenue_usd',
+    'satisfaction': 'customer_satisfaction', 'csat': 'customer_satisfaction',
+    'hours': 'work_hours_per_week', 'work hours': 'work_hours_per_week',
+    'remote': 'remote_percentage', 'wfh': 'remote_percentage', 'hybrid': 'remote_percentage'
+};
+
+const normalizeKey = (key) => {
+    if (!key || typeof key !== 'string') return key;
+    const cleanKey = key.toLowerCase().replace(/_/g, ' ').trim();
+    return SCHEMA_MAP[cleanKey] || SCHEMA_MAP[key.toLowerCase()] || key;
+};
+
+// Recursively translates synonyms
+const smartNormalize = (obj) => {
+    if (Array.isArray(obj)) return obj.map(smartNormalize);
+    if (obj !== null && typeof obj === 'object') {
+        return Object.keys(obj).reduce((acc, key) => {
+            const normalizedKey = key.startsWith('$') ? key : normalizeKey(key);
+            let value = obj[key];
+            
+            if (typeof value === 'string' && value.startsWith('$') && value.length > 1) {
+                const potentialField = value.substring(1);
+                if (!['sum', 'avg', 'min', 'max', 'push', 'addToSet', 'match', 'group'].includes(potentialField)) {
+                    const mappedField = normalizeKey(potentialField);
+                    if (mappedField !== potentialField) value = '$' + mappedField;
+                }
+            } else {
+                value = smartNormalize(value);
+            }
+            acc[normalizedKey] = value;
+            return acc;
+        }, {});
+    }
+    return obj;
+};
 
 const safeNumber = v => (typeof v === 'number' && !Number.isNaN(v)) ? v : null;
 const fmtNumber = n => {
@@ -44,18 +103,21 @@ const summarizeNames = (docs = [], limit = 10) => {
 };
 
 const generateAgentResponse = (results = [], intentResults = []) => {
-    if (!results || results.length === 0) return "I completed the request, but there was no data returned.";
+    const displayResults = results.filter(r => r.source !== 'CSV');
+    const effectiveResults = displayResults.length > 0 ? displayResults : results;
+
+    if (!effectiveResults || effectiveResults.length === 0) return "I completed the request, but there was no data returned.";
 
     const firstIntent = intentResults[0] || {};
-    const firstResult = results.find(r => r.action && r.action !== 'unknown') || results[0] || {};
+    const firstResult = effectiveResults.find(r => r.action && r.action !== 'unknown') || effectiveResults[0] || {};
     const action = firstResult.action || 'unknown';
 
     if (firstIntent.intent === 'CHAT_RESPONSE') return firstIntent.response || "Okay, I've noted that.";
     if (firstIntent.intent === 'NON_DB_QUERY') return "I'm here to work with your employee database. I can't answer general knowledge or math questions.";
     if (action === 'unknown') return firstResult.message || "I couldn't translate that into an action. Could you rephrase?";
 
-    if (results.length > 1) {
-        const parts = results.map((r, idx) => {
+    if (effectiveResults.length > 1) {
+        const parts = effectiveResults.map((r, idx) => {
             const src = r.source || 'database';
             if (r.action === 'find') {
                 const count = Array.isArray(r.data) ? r.data.length : (r.data ? 1 : 0);
@@ -88,7 +150,6 @@ const generateAgentResponse = (results = [], intentResults = []) => {
             }
             if (r.action === 'updateMany') {
                 const modified = (r.data && (r.data.modifiedCount ?? r.data.nModified ?? r.data.modified)) || 0;
-                const matched = (r.data && (r.data.matchedCount ?? r.data.n ?? r.data.matched)) || 0;
                 const names = Array.isArray(r.matchedDocs) && r.matchedDocs.length ? summarizeNames(r.matchedDocs, 20) : '';
                 if (modified === 0) return `Step ${idx + 1}: Performed update on ${src} (0 changed)${names ? ` — matched: ${names}` : ''}`;
                 return `Step ${idx + 1}: Updated ${modified} ${plural(modified, 'record')}${names ? ` — names/ids: ${names}` : ''}`;
@@ -101,7 +162,7 @@ const generateAgentResponse = (results = [], intentResults = []) => {
             }
             return `Step ${idx + 1}: Completed ${r.action} on ${src}.`;
         });
-        const header = `I've completed a sequence of ${results.length} operation${results.length > 1 ? 's' : ''}.`;
+        const header = `I've completed a sequence of ${effectiveResults.length} operation${effectiveResults.length > 1 ? 's' : ''}.`;
         return `${header} ${parts.join(' ')}`;
     }
 
@@ -174,7 +235,12 @@ const handleAgentCommand = async (req, res) => {
         let { prompt: userPrompt, sessionId: currentSessionId = "default-session" } = req.body;
         const attachedFile = req.file;
 
+        console.log(`\n🔹 [Agent] New Request | Session: ${currentSessionId}`);
+        console.log(`🔹 [Agent] Prompt: "${userPrompt}"`);
+        if (attachedFile) console.log(`🔹 [Agent] File Attached: ${attachedFile.originalname}`);
+
         if (userPrompt && userPrompt.toLowerCase().includes('confirm delete') && SESSION_CONTEXT[currentSessionId]?.pendingAction === 'DELETE_ALL') {
+            console.log("🔸 [Agent] Delete Confirmation Received.");
             userPrompt = SESSION_CONTEXT[currentSessionId].originalPrompt;
             delete SESSION_CONTEXT[currentSessionId].pendingAction;
             return handleAgentCommand({ body: { prompt: userPrompt, sessionId: currentSessionId, confirmation: 'true' }, file: attachedFile, params: req.params, query: req.query }, res);
@@ -187,6 +253,7 @@ const handleAgentCommand = async (req, res) => {
                 const fileContent = fs.readFileSync(fullPath, "utf8");
                 augmentedPrompt += `\n[ATTACHED FILE SAVED AT ${fullPath}]\n${fileContent}\n[INSTRUCTION]: Analyze the file.`;
             } catch (err) {
+                console.error("❌ [Agent] File Read Error:", err);
                 return res.status(500).json({ error: "Failed to read saved file." });
             }
         }
@@ -195,12 +262,23 @@ const handleAgentCommand = async (req, res) => {
         const intentResults = await classifyIntent(augmentedPrompt, JSON.stringify(context));
         const firstIntent = intentResults[0] || {};
 
+        console.log("🔹 [Agent] Classified Intent:", firstIntent.intent);
+
         if (firstIntent.intent === 'ERROR') return res.status(500).json(firstIntent);
         if (firstIntent.intent === 'NON_DB_QUERY') {
             return res.json({ status: 'Non-DB', response: generateAgentResponse([], intentResults) });
         }
+        
+        // --- FIXED AMBIGUOUS QUERY HANDLING ---
         if (firstIntent.intent === 'AMBIGUOUS_QUERY') {
-            const opts = firstIntent.suggestions || [];
+            console.log("🔸 [Agent] Ambiguous Query Detected.");
+            // SAFETY FIX: Ensure 'opts' is always an array
+            let opts = Array.isArray(firstIntent.suggestions) ? firstIntent.suggestions : [];
+            if (opts.length === 0 && firstIntent.suggestions) {
+                 // Try to force it into an array if it came back as a string
+                 opts = [String(firstIntent.suggestions)];
+            }
+
             return res.json({
                 status: 'Clarification Needed',
                 response: `Your query is ambiguous. Please clarify by choosing one of these fields: ${opts.join(', ')}`,
@@ -209,6 +287,7 @@ const handleAgentCommand = async (req, res) => {
         }
 
         if (firstIntent.intent === 'DELETE_ALL' && !isConfirmed) {
+            console.log("⚠️ [Agent] DELETE_ALL triggered without confirmation.");
             SESSION_CONTEXT[currentSessionId] = { pendingAction: 'DELETE_ALL', originalPrompt: userPrompt };
             return res.json({
                 status: 'Confirmation Required',
@@ -218,17 +297,33 @@ const handleAgentCommand = async (req, res) => {
         }
 
         const dbOperations = translateIntent(intentResults);
+        console.log(`🔹 [Agent] Generated ${dbOperations.length} Operation(s)`);
+
         const finalResults = [];
 
         for (const op of dbOperations) {
             if (!op || op.action === 'unknown') {
+                console.warn("⚠️ [Agent] Unknown Operation Encountered");
                 finalResults.push({ action: 'unknown', data: null, message: op?.reason || 'unknown operation' });
                 continue;
             }
 
+            console.log(`🔸 [Agent] Processing Op: ${op.action}`);
+            console.log(`   - Raw Filter:`, JSON.stringify(op.filter));
+
+            // Normalize schema terms
+            if (op.filter) op.filter = smartNormalize(op.filter);
+            if (op.data) op.data = smartNormalize(op.data);
+            if (op.projection) op.projection = smartNormalize(op.projection);
+            if (op.pipeline) op.pipeline = smartNormalize(op.pipeline);
+
+            console.log(`   - Normalized Filter:`, JSON.stringify(op.filter));
+
+            // Special Case: Ambiguous Delete Check
             if (op.action === 'deleteMany' && op.filter && Object.keys(op.filter).length > 0) {
                 const checkResults = await Employee.find(op.filter).limit(200).lean();
                 if (checkResults && checkResults.length > 1) {
+                    console.log(`🔸 [Agent] Ambiguous Delete: Found ${checkResults.length} matches.`);
                     const candidates = checkResults.map(e => ({ name: e.name, employee_id: e.employee_id, department: e.department }));
                     SESSION_CONTEXT[currentSessionId] = { pendingAction: 'DELETE_AMBIGUOUS', filter: op.filter, candidates, originalPrompt: userPrompt };
                     return res.json({
@@ -241,25 +336,49 @@ const handleAgentCommand = async (req, res) => {
                     const matchedDoc = checkResults[0];
                     try {
                         const delRes = await executeQuery(op, Employee);
+                        console.log("   - MongoDB Delete Success");
                         finalResults.push({ source: 'database', action: op.action, data: delRes, matchedDocs: [matchedDoc], filterOrPipelineUsed: op.filter || op.pipeline });
+
+                        try {
+                            const csvData = await executeCSVQuery(op);
+                            if (csvData && !csvData.message) {
+                                console.log("   - CSV Delete Success");
+                                finalResults.push({ source: 'CSV', action: op.action, data: csvData, matchedDocs: [matchedDoc], filterOrPipelineUsed: op.filter });
+                            }
+                        } catch (csvErr) { console.warn("❌ [Agent] CSV Error:", csvErr.message); }
+
                     } catch (err) {
+                        console.error("❌ [Agent] Delete Failed:", err.message);
                         finalResults.push({ source: 'database', action: op.action, data: null, message: `Delete failed: ${err.message}`, matchedDocs: [matchedDoc], filterOrPipelineUsed: op.filter || op.pipeline });
                     }
                     continue;
                 }
             }
 
+            // Special Case: Update with Filter Check
             if (op.action === 'updateMany' && op.filter && Object.keys(op.filter).length > 0) {
                 const matchedDocs = await Employee.find(op.filter).limit(200).lean();
                 try {
                     const updateRes = await executeQuery(op, Employee);
+                    console.log("   - MongoDB Update Success");
                     finalResults.push({ source: 'database', action: op.action, data: updateRes, matchedDocs, filterOrPipelineUsed: op.filter || op.pipeline });
+
+                    try {
+                        const csvData = await executeCSVQuery(op);
+                        if (csvData && !csvData.message) {
+                            console.log("   - CSV Update Success");
+                            finalResults.push({ source: 'CSV', action: op.action, data: csvData, matchedDocs, filterOrPipelineUsed: op.filter });
+                        }
+                    } catch (csvErr) { console.warn("❌ [Agent] CSV Error:", csvErr.message); }
+
                 } catch (err) {
+                    console.error("❌ [Agent] Update Failed:", err.message);
                     finalResults.push({ source: 'database', action: op.action, data: null, message: `Update failed: ${err.message}`, matchedDocs, filterOrPipelineUsed: op.filter || op.pipeline });
                 }
                 continue;
             }
 
+            // General Mongo Operations
             if (['find', 'aggregate', 'create', 'insertMany', 'deleteMany'].includes(op.action)) {
                 try {
                     const resData = await executeQuery(op, Employee, op.projection);
@@ -267,22 +386,53 @@ const handleAgentCommand = async (req, res) => {
                     if (op.action === 'find' && Array.isArray(resData)) matchedDocs = resData;
                     if ((op.action === 'create' || op.action === 'insertMany') && resData) matchedDocs = Array.isArray(resData) ? resData : [resData];
                     if (op.action === 'aggregate') matchedDocs = Array.isArray(resData) ? resData : (resData ? [resData] : []);
+                    
+                    console.log(`   - MongoDB ${op.action} Success. Count: ${Array.isArray(resData) ? resData.length : 1}`);
                     finalResults.push({ source: 'database', action: op.action, data: resData, matchedDocs, filterOrPipelineUsed: op.filter || op.pipeline });
+
+                    try {
+                        const csvData = await executeCSVQuery(op);
+                        if (csvData && !csvData.message) {
+                            console.log(`   - CSV ${op.action} Success`);
+                            finalResults.push({ source: 'CSV', action: op.action, data: csvData, matchedDocs: (op.action === 'find' ? csvData : []), filterOrPipelineUsed: op.filter || op.pipeline });
+                        }
+                    } catch (csvErr) { console.warn("❌ [Agent] CSV Error:", csvErr.message); }
+
                 } catch (err) {
+                    console.error(`❌ [Agent] MongoDB ${op.action} Failed:`, err.message);
                     finalResults.push({ source: 'database', action: op.action, data: null, message: `DB failed: ${err.message}`, filterOrPipelineUsed: op.filter || op.pipeline });
                 }
                 continue;
             }
 
+            // Fallback
             try {
                 const resData = await executeQuery(op, Employee, op.projection);
+                console.log("   - MongoDB Fallback Exec Success");
                 finalResults.push({ source: 'database', action: op.action, data: resData, filterOrPipelineUsed: op.filter || op.pipeline });
+                
+                try {
+                    const csvData = await executeCSVQuery(op);
+                    if (csvData && !csvData.message) {
+                        console.log("   - CSV Fallback Exec Success");
+                        finalResults.push({ source: 'CSV', action: op.action, data: csvData, filterOrPipelineUsed: op.filter || op.pipeline });
+                    }
+                } catch (csvErr) { console.warn("❌ [Agent] CSV Error:", csvErr.message); }
+
             } catch (err) {
+                console.error("❌ [Agent] Fallback Exec Failed:", err.message);
                 finalResults.push({ source: 'database', action: op.action, data: null, message: `Execution failed: ${err.message}` });
             }
         }
 
         const aiResponse = generateAgentResponse(finalResults, intentResults);
+        console.log("🔹 [Agent] Final AI Response:", aiResponse);
+        console.log("🔹 [Agent] Final Results Array Length:", finalResults.length);
+
+        console.log({ status: 'Success',
+            response: aiResponse,
+            results: finalResults,
+            meta: { originalPrompt: userPrompt }})
 
         return res.json({
             status: 'Success',
@@ -292,6 +442,7 @@ const handleAgentCommand = async (req, res) => {
         });
 
     } catch (error) {
+        console.error("❌ [Agent] Critical Error:", error);
         return res.status(500).json({ error: 'I encountered a major error while processing your request.', details: error.message || String(error) });
     }
 };
