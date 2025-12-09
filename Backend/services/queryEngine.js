@@ -1,55 +1,45 @@
-// Backend/services/queryEngine.js - FIX for Employee ID Validation
+// services/queryEngine.js
+const executeQuery = async (operation, Model, projection = null) => {
+    const { action, filter, update, pipeline, data } = operation || {};
 
-/**
- * Executes the translated operation against the MongoDB Model.
- * INPUT: 
- * operation: { action: 'find', filter: {...} } or { action: 'aggregate', pipeline: [...] }
- * Model: Mongoose Model (Employee)
- */
-const executeQuery = async (operation, Model) => {
-    const { action, filter, update, pipeline } = operation;
-
-    // Helper function to create a random ID
-    const generateEmployeeId = (data) => data.employee_id || `EMP-${Math.floor(Math.random() * 900000 + 100000)}`;
+    const generateEmployeeId = (doc) => doc?.employee_id || `EMP-${Math.floor(Math.random() * 900000 + 100000)}`;
 
     try {
         switch (action) {
-            case 'find':
-                // Return top 20 results to avoid overloading the response
-                return await Model.find(filter).limit(20);
+            case 'find': {
+                const q = filter || {};
+                const query = Model.find(q).limit(200);
+                if (projection && typeof projection === 'object') query.select(projection);
+                return await query.lean();
+            }
 
-            case 'aggregate':
-                return await Model.aggregate(pipeline); 
-                
-            case 'updateMany':
-                return await Model.updateMany(filter, update);
+            case 'aggregate': {
+                const p = Array.isArray(pipeline) ? pipeline : [];
+                return await Model.aggregate(p);
+            }
 
-            case 'insertMany': // MODIFIED: Handle batch creation
-                // 1. Ensure every employee document has an employee_id
-                const docsToInsertBatch = operation.data.map(doc => ({
-                    ...doc,
-                    employee_id: generateEmployeeId(doc) // Apply ID generation to each document
-                }));
-                
-                // 2. Insert the prepared batch
-                return await Model.insertMany(docsToInsertBatch); 
-            
-            case 'create':
-                // MODIFIED: Use the helper function for single creation too
-                const docToInsert = {
-                    ...operation.data,
-                    employee_id: generateEmployeeId(operation.data)
-                };
-                return await Model.create(docToInsert);
+            case 'updateMany': {
+                return await Model.updateMany(filter || {}, update || {});
+            }
 
-            case 'deleteMany':
-                return await Model.deleteMany(filter);
-                
+            case 'insertMany': {
+                const docs = (Array.isArray(data) ? data : []).map(doc => ({ ...doc, employee_id: generateEmployeeId(doc) }));
+                return await Model.insertMany(docs);
+            }
+
+            case 'create': {
+                const doc = { ...data, employee_id: generateEmployeeId(data || {}) };
+                return await Model.create(doc);
+            }
+
+            case 'deleteMany': {
+                return await Model.deleteMany(filter || {});
+            }
+
             default:
-                throw new Error(`Execution Action '${action}' not supported.`);
+                throw new Error(`Action '${action}' not supported.`);
         }
     } catch (error) {
-        console.error("Query Execution Error:", error);
         throw error;
     }
 };
