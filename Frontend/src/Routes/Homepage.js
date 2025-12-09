@@ -9,6 +9,7 @@ import {
 import { Link } from 'react-router-dom';
 import { LayoutDashboard } from "lucide-react";
 import { Download } from 'lucide-react';
+import { BarChart3, Activity, LineChart, Database } from 'lucide-react';
 
 
 
@@ -101,10 +102,11 @@ export default function Home() {
   useEffect(() => scrollToBottom(), [messages]);
 
   const suggestions = [
-    { icon: Sparkles, text: 'Summarize an article about AI', color: 'from-amber-500 to-orange-500' },
-    { icon: Lightbulb, text: 'Help me brainstorm ideas', color: 'from-yellow-400 to-amber-500' },
-    { icon: Globe, text: 'Plan a trip to Japan', color: 'from-orange-500 to-red-500' },
-    { icon: Zap, text: 'Write a creative story', color: 'from-amber-400 to-orange-400' },
+    { icon: BarChart3, text: 'Generate insightful data summaries', color: 'from-blue-500 to-indigo-500' },
+{ icon: Activity, text: 'Analyze performance and key metrics', color: 'from-indigo-500 to-purple-600' },
+{ icon: LineChart, text: 'Discover patterns and trends in datasets', color: 'from-purple-600 to-violet-600' },
+{ icon: Database, text: 'Clean, transform, and optimize raw data', color: 'from-violet-600 to-blue-600' },
+
   ];
 
   // Debug helper
@@ -113,7 +115,7 @@ export default function Home() {
     for (let [key, value] of formData.entries()) {
       data[key] = value instanceof File ? { name: value.name, size: value.size, type: value.type } : value;
     }
-    console.log('✅ FormData Contents:', data);
+    console.log('FormData Contents:', data);
   }
 
   // Core Chat Logic
@@ -428,11 +430,12 @@ export default function Home() {
                        <LayoutDashboard size={15} /> Go to Dashboard
                     </button>
                     </Link>
-                    <Link to="/export">
-                    <button onClick={() => { setShowProfileModal(true); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-sm text-white/90">
+                    <a href="http://localhost:5000/download/employees" download>         
+                    <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-sm text-white/90">
                     <Download size={15}></Download> Export
                     </button>
-                    </Link>
+                    </a>
+                
                     <button onClick={() => { setShowProfileModal(true); setShowUserMenu(false); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/10 transition-colors text-sm text-white/90">
                       <UserCircle className="w-4 h-4 text-amber-400" /> Your Profile
                     </button>
