@@ -1,10 +1,7 @@
-// services/csvEngine.js
 const fs = require('fs');
 const path = require('path');
 
 const DATA_DIR = path.join(__dirname, '../data');
-
-// --- Helper: Parse CSV to JSON Array ---
 const readCSV = (filePath) => {
     try {
         const fileContent = fs.readFileSync(filePath, 'utf8');
@@ -29,7 +26,6 @@ const readCSV = (filePath) => {
     }
 };
 
-// --- Helper: Write JSON Array to CSV ---
 const writeCSV = (filePath, data) => {
     if (!data || data.length === 0) return;
     const headers = Object.keys(data[0]);
@@ -40,7 +36,6 @@ const writeCSV = (filePath, data) => {
     fs.writeFileSync(filePath, csvContent, 'utf8');
 };
 
-// --- Helper: Basic MongoDB Filter Matcher for JS Objects ---
 const matchesFilter = (item, filter) => {
     if (!filter || Object.keys(filter).length === 0) return true;
     
@@ -48,7 +43,7 @@ const matchesFilter = (item, filter) => {
         const filterVal = filter[key];
         const itemVal = item[key];
 
-        // Handle Operators like $gt, $lt
+        // Handle Operators
         if (typeof filterVal === 'object' && filterVal !== null) {
             if (filterVal.$gt !== undefined) return itemVal > filterVal.$gt;
             if (filterVal.$gte !== undefined) return itemVal >= filterVal.$gte;
@@ -65,13 +60,12 @@ const matchesFilter = (item, filter) => {
 
 // --- Main Execution Function ---
 const executeCSVQuery = async (operation) => {
-    // 1. Find the most recent CSV file or specific file
+
     if (!fs.existsSync(DATA_DIR)) return { message: "Data directory not found." };
     
     const files = fs.readdirSync(DATA_DIR).filter(f => f.endsWith('.csv'));
     if (files.length === 0) return { message: "No CSV files found to manipulate." };
     
-    // Default to the last modified file for context
     const latestFile = files.map(name => ({
         name,
         time: fs.statSync(path.join(DATA_DIR, name)).mtime.getTime()
@@ -103,7 +97,7 @@ const executeCSVQuery = async (operation) => {
                     const updates = operation.update || operation.data || {};
                     Object.keys(updates).forEach(k => {
                         // Handle $set if present, otherwise direct
-                        const val = updates[k]; // Simplified (doesn't handle complex MongoDB update ops)
+                        const val = updates[k]; 
                         if (k !== '$set') item[k] = val;
                     });
                     if (updates.$set) {
@@ -127,7 +121,6 @@ const executeCSVQuery = async (operation) => {
             break;
 
         case 'aggregate':
-            // Very basic aggregation (only supports simple filtering for now)
             // Real aggregation on CSV requires a heavier engine, filtering is safe fallback
             const pipelineMatch = operation.pipeline?.find(p => p.$match)?.$match;
             result = data.filter(item => matchesFilter(item, pipelineMatch || {}));

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Send, Plus, MessageSquare, Sparkles, Zap, Lightbulb, Globe, 
   Menu, X, Bot, User, Loader2, Mic, FileText, LogOut, 
-  Settings, Github, UserCircle, Linkedin, Camera, Save, ArrowLeft 
+  Settings, UserCircle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 

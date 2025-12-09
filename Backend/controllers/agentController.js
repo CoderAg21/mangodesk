@@ -320,15 +320,7 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
-
-// ----------------------------------
-// IN-MEMORY SESSION CONTEXT STORAGE
-// ----------------------------------
 const SESSION_CONTEXT = {};
-
-// ----------------------------------
-// 2. HELPER FUNCTIONS
-// ----------------------------------
 
 const safeNumber = v => (typeof v === 'number' && !Number.isNaN(v)) ? v : null;
 const fmtNumber = n => {
@@ -426,9 +418,8 @@ const generateAgentResponse = (results = [], intentResults = []) => {
     }
 };
 
-// ----------------------------------
 // 4. MAIN HANDLER
-// ----------------------------------
+
 const handleAgentCommand = async (req, res) => {
     const { prompt, sessionId = 'default-session' } = req.body || {};
     const file = req.file;
@@ -473,9 +464,9 @@ const handleAgentCommand = async (req, res) => {
                 continue;
             }
 
-            // ----------------------------------------------------
+           
             // A. Execute MongoDB Operation
-            // ----------------------------------------------------
+        
             try {
                 const mongoResult = await executeQuery(op, Employee);
                 if (mongoResult) {
@@ -491,9 +482,8 @@ const handleAgentCommand = async (req, res) => {
                 console.warn("MongoDB Query skipped or failed:", mongoErr.message);
             }
 
-            // ----------------------------------------------------
+         
             // B. Execute CSV Operation (Syncs manipulations)
-            // ----------------------------------------------------
             try {
                 // We pass the same operation object to the CSV Engine
                 const csvResult = await executeCSVQuery(op);
