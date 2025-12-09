@@ -1,12 +1,13 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Link } from 'react-router-dom'; // Added Link for navigation
 import {
   BarChart, Bar, Line, PieChart, Pie, Cell, 
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, 
   Legend, ResponsiveContainer, Area, AreaChart
 } from 'recharts';
-import { Moon, Sun, Users, TrendingUp, DollarSign, Building2, Activity, Sparkles } from 'lucide-react';
+import { Moon, Sun, Users, TrendingUp, DollarSign, Building2, Activity, Sparkles, ArrowLeft } from 'lucide-react'; // Added ArrowLeft
 
 // Floating particles background
 const FloatingParticles = ({ darkMode }) => (
@@ -399,29 +400,47 @@ export default function Dashboard() {
               </motion.p>
             </div>
             
-            {/* Theme Toggle */}
-            <motion.button
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={() => setDarkMode(!darkMode)}
-              className={`p-4 rounded-2xl transition-all duration-300 ${
-                darkMode 
-                  ? 'bg-slate-800 text-yellow-400 hover:bg-slate-700' 
-                  : 'bg-white text-slate-700 hover:bg-gray-100 shadow-lg'
-              }`}
-            >
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={darkMode ? 'moon' : 'sun'}
-                  initial={{ rotate: -90, opacity: 0 }}
-                  animate={{ rotate: 0, opacity: 1 }}
-                  exit={{ rotate: 90, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
+            {/* Header Actions: Back Button & Theme Toggle */}
+            <div className="flex items-center gap-4">
+                <Link to="/home">
+                    <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        className={`p-4 rounded-2xl transition-all duration-300 flex items-center gap-2 ${
+                            darkMode 
+                                ? 'bg-slate-800 text-white hover:bg-slate-700' 
+                                : 'bg-white text-slate-700 hover:bg-gray-100 shadow-lg'
+                        }`}
+                    >
+                        <ArrowLeft className="w-6 h-6" />
+                        <span className="font-medium hidden sm:inline">Back</span>
+                    </motion.button>
+                </Link>
+
+                {/* Theme Toggle */}
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => setDarkMode(!darkMode)}
+                  className={`p-4 rounded-2xl transition-all duration-300 ${
+                    darkMode 
+                      ? 'bg-slate-800 text-yellow-400 hover:bg-slate-700' 
+                      : 'bg-white text-slate-700 hover:bg-gray-100 shadow-lg'
+                  }`}
                 >
-                  {darkMode ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
-                </motion.div>
-              </AnimatePresence>
-            </motion.button>
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={darkMode ? 'moon' : 'sun'}
+                      initial={{ rotate: -90, opacity: 0 }}
+                      animate={{ rotate: 0, opacity: 1 }}
+                      exit={{ rotate: 90, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      {darkMode ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
+                    </motion.div>
+                  </AnimatePresence>
+                </motion.button>
+            </div>
           </div>
         </motion.header>
 

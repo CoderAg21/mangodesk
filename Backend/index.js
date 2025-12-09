@@ -8,8 +8,12 @@ const passport = require("passport");
 const moment = require('moment');
 const fs = require('fs');         
 const csv = require('csv-parser'); 
+<<<<<<< HEAD
 const Conversation = require('./models/conversationModel');
 const axios = require('axios')
+=======
+const downloadRoutes = require("./routes/downloadRoutes");
+>>>>>>> d1764231458bb5088fa096a832d8a7c40bc77c44
 const agentRoutes = require('./routes/agentRoutes');
 const passportSetup = require("./config/passport");
 const contactRoutes = require("./routes/contactRoutes");
@@ -17,8 +21,13 @@ const { setGlobalDispatcher, ProxyAgent } = require("undici");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+<<<<<<< HEAD
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mangoDesk';
 const csvFilePath = path.join(__dirname, 'data', 'employees.csv'); // Define CSV path
+=======
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mangodesk';
+const csvFilePath = path.join(__dirname, 'data', 'employees.csv');
+>>>>>>> d1764231458bb5088fa096a832d8a7c40bc77c44
 
 // Proxy COnfiguration
 
@@ -33,7 +42,6 @@ if (process.env.PROXY_URL) {
 
 
 //Helper Functions
-
 const calculateTenure = (hireDate, termDate) => {
     const start = moment(hireDate, ['M/D/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY']);
     
@@ -45,14 +53,12 @@ const calculateTenure = (hireDate, termDate) => {
 
     // Ensure both dates are valid before calculating difference
     if (!start.isValid() || !end.isValid()) return 0;
-    
-    // Calculate difference in years (true for floating point result)
     return end.diff(start, 'years', true); 
 };
 
 
 // Middleware Configuration
-app.use(express.json()); // To parse JSON bodies
+app.use(express.json());
 app.use(cors({
     origin: "http://localhost:3000",
     methods: "GET,POST,PUT,DELETE",
@@ -77,11 +83,9 @@ app.use('/api/brain', agentRoutes);
 // Contact Form Route
 app.use('/api/contact', contactRoutes);
 
-
 //  Get Employees from CSV (Example legacy route)
 app.get('/api/employees', (req, res) => {
     const results = [];
-    // Check for the file existence before attempting to read
     if (!fs.existsSync(csvFilePath)) {
         return res.status(500).json({ error: "CSV file not found at expected path." });
     }
@@ -127,8 +131,7 @@ app.get('/api/employees', (req, res) => {
         });
 });
 
-
-// Routes: Google Authentication
+//Google Authentication
 app.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
 
 app.get("/google/callback",
@@ -150,9 +153,11 @@ app.get("/logout", (req, res, next) => {
     });
 });
 
+//Download Routes
+app.use("/download", downloadRoutes);
+
 
 // Server 
-
 mongoose.connect(MONGO_URI)
     .then(() => console.log("MongoDB connected"))
     .catch((err) => console.log("DB Error:", err));

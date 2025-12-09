@@ -1,22 +1,15 @@
 // controllers/agentController.js
-const fs = require('fs');
-const path = require('path');
-const multer = require('multer');
-
-// --- MODELS ---
-const Conversation = require('../models/conversationModel'); 
-const Employee = require('../models/Employee'); 
-
-// SERVICES
+const fs = require("fs");
+const path = require("path");
+const multer = require("multer");
 const { classifyIntent } = require("../services/intentClassifier");
 const { translateIntent } = require("../services/intentToMongo");
 const { executeQuery } = require("../services/queryEngine");
-const { executeCSVQuery } = require("../services/csvEngine"); 
+const { executeCSVQuery } = require("../services/csvEngine");
+const Employee = require("../models/Employee");
+const Conversation = require("../models/conversationModel");
 
-// CONFIGURATION 
-const SESSION_CONTEXT = {}; // In-memory storage for short-term context (follow-up questions)
 
-// Multer Disk Storage
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const folderPath = path.join(__dirname, "../data");
@@ -24,469 +17,448 @@ const storage = multer.diskStorage({
         cb(null, folderPath);
     },
     filename: (req, file, cb) => {
-        cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, "_")}`);
+        const timestamp = Date.now();
+        const safeName = file.originalname.replace(/\s+/g, "_");
+        cb(null, `${timestamp}-${safeName}`);
     }
 });
-const upload = multer({ storage });
 
-// HELPER: Human-Like Response Generator
+const upload = multer({ storage });
+const SESSION_CONTEXT = {};
+
+// --- INTELLIGENT SCHEMA MAPPING ---
+const SCHEMA_MAP = {
+    // Identity
+    'id': 'employee_id', 'emp_id': 'employee_id', 'employee id': 'employee_id',
+    'full name': 'name', 'fullname': 'name',
+    'dept': 'department', 'division': 'department', 'unit': 'department',
+    'job': 'role', 'title': 'role', 'position': 'role', 'designation': 'role',
+    'nation': 'country', 'region': 'country',
+    'location': 'office_location', 'office': 'office_location', 'place': 'office_location', 'city': 'office_location',
+    // Dates
+    'joined': 'hire_date', 'hired': 'hire_date', 'start date': 'hire_date', 'joining': 'hire_date',
+    'left': 'termination_date', 'fired': 'termination_date', 'quit': 'termination_date', 'exit': 'termination_date',
+    // Compensation
+    'salary': 'salary_usd', 'pay': 'salary_usd', 'wage': 'salary_usd', 'income': 'salary_usd', 'ctc': 'salary_usd',
+    'bonus': 'bonus_usd', 'incentive': 'bonus_usd', 'commission': 'bonus_usd',
+    'stock': 'stock_options', 'stocks': 'stock_options', 'equity': 'stock_options', 'shares': 'stock_options',
+    // Performance & Metrics
+    'score': 'performance_score', 'rating': 'performance_score', 'performance': 'performance_score',
+    'promotion': 'promotion_count', 'promotions': 'promotion_count', 'promoted': 'promotion_count',
+    'project': 'project_count', 'projects': 'project_count',
+    'deal': 'deals_closed', 'deals': 'deals_closed', 'sales': 'deals_closed', 'closed': 'deals_closed',
+    'deal size': 'avg_deal_size_usd', 'avg deal': 'avg_deal_size_usd',
+    'revenue': 'client_revenue_usd', 'generated': 'client_revenue_usd',
+    'satisfaction': 'customer_satisfaction', 'csat': 'customer_satisfaction',
+    'hours': 'work_hours_per_week', 'work hours': 'work_hours_per_week',
+    'remote': 'remote_percentage', 'wfh': 'remote_percentage', 'hybrid': 'remote_percentage'
+};
+
+const normalizeKey = (key) => {
+    if (!key || typeof key !== 'string') return key;
+    const cleanKey = key.toLowerCase().replace(/_/g, ' ').trim();
+    return SCHEMA_MAP[cleanKey] || SCHEMA_MAP[key.toLowerCase()] || key;
+};
+
+// Recursively translates synonyms
+const smartNormalize = (obj) => {
+    if (Array.isArray(obj)) return obj.map(smartNormalize);
+    if (obj !== null && typeof obj === 'object') {
+        return Object.keys(obj).reduce((acc, key) => {
+            const normalizedKey = key.startsWith('$') ? key : normalizeKey(key);
+            let value = obj[key];
+            
+            if (typeof value === 'string' && value.startsWith('$') && value.length > 1) {
+                const potentialField = value.substring(1);
+                if (!['sum', 'avg', 'min', 'max', 'push', 'addToSet', 'match', 'group'].includes(potentialField)) {
+                    const mappedField = normalizeKey(potentialField);
+                    if (mappedField !== potentialField) value = '$' + mappedField;
+                }
+            } else {
+                value = smartNormalize(value);
+            }
+            acc[normalizedKey] = value;
+            return acc;
+        }, {});
+    }
+    return obj;
+};
+
+const safeNumber = v => (typeof v === 'number' && !Number.isNaN(v)) ? v : null;
+const fmtNumber = n => {
+    const num = safeNumber(n);
+    if (num == null) return 'N/A';
+    return Number(num).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+};
+const fmtCurrency = n => {
+    const num = safeNumber(n);
+    if (num == null) return 'N/A';
+    return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
 const plural = (n, singular, pluralForm) => (n === 1 ? singular : (pluralForm || singular + 's'));
 
+const summarizeNames = (docs = [], limit = 10) => {
+    const names = docs.map(d => (d && (d.name || d.employee_id || d._id)) ? (d.name ? d.name : (d.employee_id || d._id)) : null).filter(Boolean);
+    if (names.length === 0) return '';
+    if (names.length <= limit) return names.join(', ');
+    return `${names.slice(0, limit).join(', ')}${names.length > limit ? ', ...' : ''}`;
+};
+
 const generateAgentResponse = (results = [], intentResults = []) => {
-    if (!results || results.length === 0) return "I completed the request, but no data was returned.";
+    const displayResults = results.filter(r => r.source !== 'CSV');
+    const effectiveResults = displayResults.length > 0 ? displayResults : results;
+
+    if (!effectiveResults || effectiveResults.length === 0) return "I completed the request, but there was no data returned.";
 
     const firstIntent = intentResults[0] || {};
-    const firstResult = results[0] || {};
+    const firstResult = effectiveResults.find(r => r.action && r.action !== 'unknown') || effectiveResults[0] || {};
     const action = firstResult.action || 'unknown';
 
-    // 1. Chat Response
-    if (firstIntent.intent === 'CHAT_RESPONSE') return firstIntent.response || "Understood.";
+    if (firstIntent.intent === 'CHAT_RESPONSE') return firstIntent.response || "Okay, I've noted that.";
+    if (firstIntent.intent === 'NON_DB_QUERY') return "I'm here to work with your employee database. I can't answer general knowledge or math questions.";
+    if (action === 'unknown') return firstResult.message || "I couldn't translate that into an action. Could you rephrase?";
 
-    // 2. Database Actions
-    if (results.length > 0) {
-        switch (action) {
-            case 'find': {
-                const count = Array.isArray(firstResult.data) ? firstResult.data.length : (firstResult.data ? 1 : 0);
-                if (count === 0) return "I searched the database but found no matching records.";
-                if (count === 1) return `I found **one record** matching your criteria.`;
-                return `I found **${count} ${plural(count, 'record')}** matching your request.`;
+    if (effectiveResults.length > 1) {
+        const parts = effectiveResults.map((r, idx) => {
+            const src = r.source || 'database';
+            if (r.action === 'find') {
+                const count = Array.isArray(r.data) ? r.data.length : (r.data ? 1 : 0);
+                const names = Array.isArray(r.matchedDocs) && r.matchedDocs.length ? summarizeNames(r.matchedDocs, 20) : (Array.isArray(r.data) ? summarizeNames(r.data, 20) : '');
+                if (count === 0) return `Step ${idx + 1}: I searched the ${src} and found 0 records.`;
+                return `Step ${idx + 1}: Retrieved ${count} ${plural(count, 'record')} from the ${src}${names ? ` — names/ids: ${names}` : ''}.`;
             }
-            case 'insertMany':
-            case 'create': {
-                // Handle single or array inserts
-                const count = Array.isArray(firstResult.data) ? firstResult.data.length : 1;
-                return `I successfully added **${count} new ${plural(count, 'record')}** to the database.`;
+            if (r.action === 'aggregate') {
+                const rows = Array.isArray(r.data) ? r.data : (r.data ? [r.data] : []);
+                if (rows.length === 0) return `Step ${idx + 1}: Aggregation on ${src} returned no data.`;
+                const metricParts = rows.map(row => {
+                    const numericKeys = Object.keys(row).filter(k => typeof row[k] === 'number');
+                    if (numericKeys.length === 0) {
+                        const nameLabel = row.name || row._id || JSON.stringify(row);
+                        return `${nameLabel}: N/A`;
+                    }
+                    return numericKeys.map(k => {
+                        const isCurrency = k.toLowerCase().includes('salary') || k.toLowerCase().includes('bonus') || k.toLowerCase().includes('cost') || k.toLowerCase().includes('avg');
+                        const label = row.name || row._id || k;
+                        return `${label}: ${isCurrency ? fmtCurrency(row[k]) : fmtNumber(row[k])}`;
+                    }).join(', ');
+                });
+                return `Step ${idx + 1}: Calculated metrics from ${src}: ${metricParts.join('; ')}`;
             }
-            case 'updateMany': {
-                const modified = firstResult.data?.modifiedCount || 0;
-                return `I updated **${modified} ${plural(modified, 'record')}** in the database.`;
+            if (r.action === 'create' || r.action === 'insertMany') {
+                const arr = Array.isArray(r.data) ? r.data : (r.data ? [r.data] : []);
+                if (arr.length === 0) return `Step ${idx + 1}: Creation ran but no records were returned.`;
+                const createdList = arr.map(d => d.name ? `${d.name} (${d.employee_id || 'no-id'})` : (d.employee_id || 'created')).slice(0, 20);
+                return `Step ${idx + 1}: Added ${arr.length} ${plural(arr.length, 'record')} — ${createdList.join(', ')}`;
             }
-            case 'deleteMany': {
-                const deleted = firstResult.data?.deletedCount || 0;
-                return `I removed **${deleted} ${plural(deleted, 'record')}** from the database.`;
+            if (r.action === 'updateMany') {
+                const modified = (r.data && (r.data.modifiedCount ?? r.data.nModified ?? r.data.modified)) || 0;
+                const names = Array.isArray(r.matchedDocs) && r.matchedDocs.length ? summarizeNames(r.matchedDocs, 20) : '';
+                if (modified === 0) return `Step ${idx + 1}: Performed update on ${src} (0 changed)${names ? ` — matched: ${names}` : ''}`;
+                return `Step ${idx + 1}: Updated ${modified} ${plural(modified, 'record')}${names ? ` — names/ids: ${names}` : ''}`;
             }
-            case 'aggregate':
-                return "I calculated the metrics you requested. You can see the details below.";
-            default: 
-                return firstResult.message || "Operation completed successfully.";
-        }
+            if (r.action === 'deleteMany') {
+                const deleted = (r.data && (r.data.deletedCount ?? r.data.n ?? r.data.deleted)) || 0;
+                const names = Array.isArray(r.matchedDocs) && r.matchedDocs.length ? summarizeNames(r.matchedDocs, 20) : '';
+                if (deleted === 0) return `Step ${idx + 1}: Deletion ran on ${src} (0 removed)${names ? ` — matched: ${names}` : ''}`;
+                return `Step ${idx + 1}: Deleted ${deleted} ${plural(deleted, 'record')}${names ? ` — names/ids: ${names}` : ''}`;
+            }
+            return `Step ${idx + 1}: Completed ${r.action} on ${src}.`;
+        });
+        const header = `I've completed a sequence of ${effectiveResults.length} operation${effectiveResults.length > 1 ? 's' : ''}.`;
+        return `${header} ${parts.join(' ')}`;
     }
-    return "I processed your request.";
+
+    if (action === 'find') {
+        const rows = Array.isArray(firstResult.data) ? firstResult.data : (firstResult.data ? [firstResult.data] : []);
+        const count = rows.length;
+        const src = firstResult.source || 'database';
+        if (count === 0) return `I searched the ${src} and found no matching employees.`;
+        if (count === 1) {
+            const e = rows[0];
+            return `Here is the employee you asked for: ${e.name || e.employee_id || 'Unknown'}${e.employee_id ? ` (ID: ${e.employee_id})` : ''}${e.department ? ` — ${e.department}` : ''}.`;
+        }
+        const names = summarizeNames(rows, 100);
+        return `Here are the ${count} employees I found in the ${src}: ${names}.`;
+    }
+
+    if (action === 'aggregate') {
+        const rows = Array.isArray(firstResult.data) ? firstResult.data : (firstResult.data ? [firstResult.data] : []);
+        if (rows.length === 0) return 'Aggregation returned no valid data.';
+        const metricParts = rows.map(row => {
+            const numericKeys = Object.keys(row).filter(k => typeof row[k] === 'number');
+            if (numericKeys.length === 0) {
+                const label = row.name || row._id || JSON.stringify(row);
+                return `${label}: N/A`;
+            }
+            return numericKeys.map(k => {
+                const isCurrency = k.toLowerCase().includes('salary') || k.toLowerCase().includes('bonus') || k.toLowerCase().includes('cost') || k.toLowerCase().includes('avg');
+                const label = row.name || row._id || k;
+                return `${label}: ${isCurrency ? fmtCurrency(row[k]) : fmtNumber(row[k])}`;
+            }).join(', ');
+        });
+        return `Here are the calculations you requested: ${metricParts.join('; ')}`;
+    }
+
+    if (action === 'create' || action === 'insertMany') {
+        const arr = Array.isArray(firstResult.data) ? firstResult.data : (firstResult.data ? [firstResult.data] : []);
+        if (arr.length === 0) return 'No records were inserted.';
+        const created = arr.map(d => d.name ? `${d.name}${d.employee_id ? ` (ID: ${d.employee_id})` : ''}` : (d.employee_id || 'created'));
+        if (created.length === 1) return `Successfully added ${created[0]}.`;
+        return `Successfully added ${arr.length} records: ${created.slice(0, 20).join(', ')}${created.length > 20 ? ', ...' : ''}.`;
+    }
+
+    if (action === 'updateMany') {
+        const modified = (firstResult.data && (firstResult.data.modifiedCount ?? firstResult.data.nModified ?? firstResult.data.modified)) || 0;
+        const matchedDocs = Array.isArray(firstResult.matchedDocs) ? firstResult.matchedDocs : [];
+        const names = summarizeNames(matchedDocs, 50);
+        if (modified === 0) return `Performed update (0 changed)${names ? ` — matched: ${names}` : ''}.`;
+        return `Updated ${modified} ${plural(modified, 'record')}${names ? ` — names/ids: ${names}` : ''}.`;
+    }
+
+    if (action === 'deleteMany') {
+        const removed = (firstResult.data && (firstResult.data.deletedCount ?? firstResult.data.n ?? firstResult.data.deleted)) || 0;
+        const matchedDocs = Array.isArray(firstResult.matchedDocs) ? firstResult.matchedDocs : [];
+        const names = summarizeNames(matchedDocs, 50);
+        if (removed === 0) return `Deletion executed (0 removed)${names ? ` — matched: ${names}` : ''}.`;
+        return `Deleted ${removed} ${plural(removed, 'record')}${names ? ` — names/ids: ${names}` : ''}.`;
+    }
+
+    return 'The database operation completed successfully.';
 };
 
-
-// --- MAIN HANDLER ---
 const handleAgentCommand = async (req, res) => {
+    const { prompt, sessionId = 'default-session', confirmation = 'false' } = req.body || {};
+    const file = req.file;
+    const isConfirmed = confirmation === 'true';
+
+    if (!prompt && !file) return res.status(400).json({ error: 'A prompt or file attachment must be provided.' });
+
     try {
-        let { prompt, sessionId } = req.body;
-        const file = req.file;
-
-        //  Get Email from Session (Passport.js) 
+        let { prompt: userPrompt, sessionId: currentSessionId = "default-session" } = req.body;
+        const attachedFile = req.file;
         const userEmail = req.user ? req.user.email : "guest@mangodesk.com"; 
-
-        if (!sessionId) sessionId = `session_${Date.now()}`;
-
-        // 1. SAVE USER INPUT TO DB 
-        let chat = await Conversation.findOne({ sessionId });
-        if (!chat) {
-            chat = new Conversation({ sessionId, userEmail, messages: [] });
-        }
-
-        const userMsgText = prompt || (file ? `Uploaded file: ${file.originalname}` : "Empty Prompt");
-        chat.messages.push({ sender: 'user', text: userMsgText });
-        await chat.save(); 
-
-        // 2. PREPARE INPUT 
-        let aiResponseText = "";
-        let finalResults = [];
-        let detectedIntent = "UNKNOWN";
-
-        if (prompt || file) {
-            let fullInput = prompt || "";
-            if (file) {
-                 const fileContent = fs.readFileSync(file.path, 'utf8');
-                 fullInput += `\n[Context from file]: ${fileContent}`;
-            }
-
-            // 3. CLASSIFY INTENT 
-            const context = SESSION_CONTEXT[sessionId] || {};
-            const intentResult = await classifyIntent(fullInput, JSON.stringify(context)); 
-            const firstIntent = intentResult[0] || {};
-            detectedIntent = firstIntent.intent || "GENERAL_CHAT";
-
-            // 4. HANDLE SPECIAL STATES 
-            if (detectedIntent === 'ERROR') {
-                aiResponseText = firstIntent.message || "I encountered an error processing that.";
-            } else if (detectedIntent === 'AMBIGUOUS_QUERY') {
-                aiResponseText = `I'm not sure which field you mean. Did you mean: ${firstIntent.suggestions?.join(', ')}?`;
-            } else if (detectedIntent === "CHAT_RESPONSE") {
-                aiResponseText = firstIntent.response;
-            } else {
-                // 5. EXECUTE DATABASE LOGIC
-                const dbOperations = translateIntent(intentResult);
-                
-                for (const op of dbOperations) {
-                    if (!op || op.action === 'unknown') continue;
-
-                    
-                    try {
-                        const data = await executeQuery(op, Employee);
-                        
-                        finalResults.push({ 
-                            action: op.action, 
-                            data: data,
-                            source: 'MongoDB' 
-                        });
-
-                        
-                        if (['find', 'aggregate'].includes(op.action)) {
-                            SESSION_CONTEXT[sessionId] = { 
-                                lastAction: op.action, 
-                                resultCount: Array.isArray(data) ? data.length : 1 
-                            };
-                        }
-                    } catch (err) {
-                        console.error("DB Op Failed:", err.message);
-                        finalResults.push({ action: op.action, status: 'Failed', message: err.message });
-                    }
-                }
-                
-                // Generate Human Response
-                aiResponseText = generateAgentResponse(finalResults, intentResult);
-            }
-        }
-
-        // 6. SAVE AI RESPONSE TO DB 
+        console.log(`\n🔹 [Agent] New Request | Session: ${currentSessionId}`);
+        console.log(`🔹 [Agent] Prompt: "${userPrompt}"`);
+        if (attachedFile) console.log(`🔹 [Agent] File Attached: ${attachedFile.originalname}`);
+        // Saving User prompt to history
+        let chat = await Conversation.findOne({ sessionId: currentSessionId });
+        if (!chat) chat = new Conversation({ sessionId: currentSessionId, userEmail, messages: [] });
         chat.messages.push({
-            sender: 'ai',
-            text: aiResponseText,
-            intent: detectedIntent
+            sender: 'user',
+            text: userPrompt || `[File: ${attachedFile ? attachedFile.originalname : 'No Text'}]`
         });
-        chat.lastUpdated = new Date();
         await chat.save();
 
-        // 7. SEND RESPONSE TO FRONTEND
-        res.json({
-            success: true,
-            sessionId: sessionId,
-            reply: aiResponseText,
-            results: finalResults
+
+        if (userPrompt && userPrompt.toLowerCase().includes('confirm delete') && SESSION_CONTEXT[currentSessionId]?.pendingAction === 'DELETE_ALL') {
+            console.log("🔸 [Agent] Delete Confirmation Received.");
+            userPrompt = SESSION_CONTEXT[currentSessionId].originalPrompt;
+            delete SESSION_CONTEXT[currentSessionId].pendingAction;
+            return handleAgentCommand({ body: { prompt: userPrompt, sessionId: currentSessionId, confirmation: 'true' }, file: attachedFile, params: req.params, query: req.query }, res);
+        }
+
+        let augmentedPrompt = userPrompt || "";
+        if (attachedFile) {
+            try {
+                const fullPath = attachedFile.path;
+                const fileContent = fs.readFileSync(fullPath, "utf8");
+                augmentedPrompt += `\n[ATTACHED FILE SAVED AT ${fullPath}]\n${fileContent}\n[INSTRUCTION]: Analyze the file.`;
+            } catch (err) {
+                console.error("❌ [Agent] File Read Error:", err);
+                return res.status(500).json({ error: "Failed to read saved file." });
+            }
+        }
+
+        const context = SESSION_CONTEXT[currentSessionId] || {};
+        const intentResults = await classifyIntent(augmentedPrompt, JSON.stringify(context));
+        const firstIntent = intentResults[0] || {};
+
+        console.log("🔹 [Agent] Classified Intent:", firstIntent.intent);
+
+        if (firstIntent.intent === 'ERROR') return res.status(500).json(firstIntent);
+        if (firstIntent.intent === 'NON_DB_QUERY') {
+            return res.json({ status: 'Non-DB', response: generateAgentResponse([], intentResults) });
+        }
+        
+        // --- FIXED AMBIGUOUS QUERY HANDLING ---
+        if (firstIntent.intent === 'AMBIGUOUS_QUERY') {
+            console.log("🔸 [Agent] Ambiguous Query Detected.");
+            // SAFETY FIX: Ensure 'opts' is always an array
+            let opts = Array.isArray(firstIntent.suggestions) ? firstIntent.suggestions : [];
+            if (opts.length === 0 && firstIntent.suggestions) {
+                 // Try to force it into an array if it came back as a string
+                 opts = [String(firstIntent.suggestions)];
+            }
+
+            return res.json({
+                status: 'Clarification Needed',
+                response: `Your query is ambiguous. Please clarify by choosing one of these fields: ${opts.join(', ')}`,
+                options: opts
+            });
+        }
+
+        if (firstIntent.intent === 'DELETE_ALL' && !isConfirmed) {
+            console.log("⚠️ [Agent] DELETE_ALL triggered without confirmation.");
+            SESSION_CONTEXT[currentSessionId] = { pendingAction: 'DELETE_ALL', originalPrompt: userPrompt };
+            return res.json({
+                status: 'Confirmation Required',
+                response: 'WARNING: You are attempting to delete the entire employee database. Reply with "confirm delete" to proceed.',
+                meta: { requiresConfirmation: true }
+            });
+        }
+
+        const dbOperations = translateIntent(intentResults);
+        console.log(`🔹 [Agent] Generated ${dbOperations.length} Operation(s)`);
+
+        const finalResults = [];
+
+        for (const op of dbOperations) {
+            if (!op || op.action === 'unknown') {
+                console.warn("⚠️ [Agent] Unknown Operation Encountered");
+                finalResults.push({ action: 'unknown', data: null, message: op?.reason || 'unknown operation' });
+                continue;
+            }
+
+            console.log(`🔸 [Agent] Processing Op: ${op.action}`);
+            console.log(`   - Raw Filter:`, JSON.stringify(op.filter));
+
+            // Normalize schema terms
+            if (op.filter) op.filter = smartNormalize(op.filter);
+            if (op.data) op.data = smartNormalize(op.data);
+            if (op.projection) op.projection = smartNormalize(op.projection);
+            if (op.pipeline) op.pipeline = smartNormalize(op.pipeline);
+
+            console.log(`   - Normalized Filter:`, JSON.stringify(op.filter));
+
+            // Special Case: Ambiguous Delete Check
+            if (op.action === 'deleteMany' && op.filter && Object.keys(op.filter).length > 0) {
+                const checkResults = await Employee.find(op.filter).limit(200).lean();
+                if (checkResults && checkResults.length > 1) {
+                    console.log(`🔸 [Agent] Ambiguous Delete: Found ${checkResults.length} matches.`);
+                    const candidates = checkResults.map(e => ({ name: e.name, employee_id: e.employee_id, department: e.department }));
+                    SESSION_CONTEXT[currentSessionId] = { pendingAction: 'DELETE_AMBIGUOUS', filter: op.filter, candidates, originalPrompt: userPrompt };
+                    return res.json({
+                        status: 'Clarification Needed',
+                        response: `I found ${candidates.length} employees matching that deletion filter. Please specify which one(s) by Employee ID or exact name.`,
+                        candidates
+                    });
+                }
+                if (checkResults && checkResults.length === 1) {
+                    const matchedDoc = checkResults[0];
+                    try {
+                        const delRes = await executeQuery(op, Employee);
+                        console.log("   - MongoDB Delete Success");
+                        finalResults.push({ source: 'database', action: op.action, data: delRes, matchedDocs: [matchedDoc], filterOrPipelineUsed: op.filter || op.pipeline });
+
+                        try {
+                            const csvData = await executeCSVQuery(op);
+                            if (csvData && !csvData.message) {
+                                console.log("   - CSV Delete Success");
+                                finalResults.push({ source: 'CSV', action: op.action, data: csvData, matchedDocs: [matchedDoc], filterOrPipelineUsed: op.filter });
+                            }
+                        } catch (csvErr) { console.warn("❌ [Agent] CSV Error:", csvErr.message); }
+
+                    } catch (err) {
+                        console.error("❌ [Agent] Delete Failed:", err.message);
+                        finalResults.push({ source: 'database', action: op.action, data: null, message: `Delete failed: ${err.message}`, matchedDocs: [matchedDoc], filterOrPipelineUsed: op.filter || op.pipeline });
+                    }
+                    continue;
+                }
+            }
+
+            // Special Case: Update with Filter Check
+            if (op.action === 'updateMany' && op.filter && Object.keys(op.filter).length > 0) {
+                const matchedDocs = await Employee.find(op.filter).limit(200).lean();
+                try {
+                    const updateRes = await executeQuery(op, Employee);
+                    console.log("   - MongoDB Update Success");
+                    finalResults.push({ source: 'database', action: op.action, data: updateRes, matchedDocs, filterOrPipelineUsed: op.filter || op.pipeline });
+
+                    try {
+                        const csvData = await executeCSVQuery(op);
+                        if (csvData && !csvData.message) {
+                            console.log("   - CSV Update Success");
+                            finalResults.push({ source: 'CSV', action: op.action, data: csvData, matchedDocs, filterOrPipelineUsed: op.filter });
+                        }
+                    } catch (csvErr) { console.warn("❌ [Agent] CSV Error:", csvErr.message); }
+
+                } catch (err) {
+                    console.error("❌ [Agent] Update Failed:", err.message);
+                    finalResults.push({ source: 'database', action: op.action, data: null, message: `Update failed: ${err.message}`, matchedDocs, filterOrPipelineUsed: op.filter || op.pipeline });
+                }
+                continue;
+            }
+
+            // General Mongo Operations
+            if (['find', 'aggregate', 'create', 'insertMany', 'deleteMany'].includes(op.action)) {
+                try {
+                    const resData = await executeQuery(op, Employee, op.projection);
+                    let matchedDocs = [];
+                    if (op.action === 'find' && Array.isArray(resData)) matchedDocs = resData;
+                    if ((op.action === 'create' || op.action === 'insertMany') && resData) matchedDocs = Array.isArray(resData) ? resData : [resData];
+                    if (op.action === 'aggregate') matchedDocs = Array.isArray(resData) ? resData : (resData ? [resData] : []);
+                    
+                    console.log(`   - MongoDB ${op.action} Success. Count: ${Array.isArray(resData) ? resData.length : 1}`);
+                    finalResults.push({ source: 'database', action: op.action, data: resData, matchedDocs, filterOrPipelineUsed: op.filter || op.pipeline });
+
+                    try {
+                        const csvData = await executeCSVQuery(op);
+                        if (csvData && !csvData.message) {
+                            console.log(`   - CSV ${op.action} Success`);
+                            finalResults.push({ source: 'CSV', action: op.action, data: csvData, matchedDocs: (op.action === 'find' ? csvData : []), filterOrPipelineUsed: op.filter || op.pipeline });
+                        }
+                    } catch (csvErr) { console.warn("❌ [Agent] CSV Error:", csvErr.message); }
+
+                } catch (err) {
+                    console.error(`❌ [Agent] MongoDB ${op.action} Failed:`, err.message);
+                    finalResults.push({ source: 'database', action: op.action, data: null, message: `DB failed: ${err.message}`, filterOrPipelineUsed: op.filter || op.pipeline });
+                }
+                continue;
+            }
+
+            // Fallback
+            try {
+                const resData = await executeQuery(op, Employee, op.projection);
+                console.log("   - MongoDB Fallback Exec Success");
+                finalResults.push({ source: 'database', action: op.action, data: resData, filterOrPipelineUsed: op.filter || op.pipeline });
+                
+                try {
+                    const csvData = await executeCSVQuery(op);
+                    if (csvData && !csvData.message) {
+                        console.log("   - CSV Fallback Exec Success");
+                        finalResults.push({ source: 'CSV', action: op.action, data: csvData, filterOrPipelineUsed: op.filter || op.pipeline });
+                    }
+                } catch (csvErr) { console.warn("❌ [Agent] CSV Error:", csvErr.message); }
+
+            } catch (err) {
+                console.error("❌ [Agent] Fallback Exec Failed:", err.message);
+                finalResults.push({ source: 'database', action: op.action, data: null, message: `Execution failed: ${err.message}` });
+            }
+        }
+
+        const aiResponse = generateAgentResponse(finalResults, intentResults);
+        console.log("🔹 [Agent] Final AI Response:", aiResponse);
+        console.log("🔹 [Agent] Final Results Array Length:", finalResults.length);
+
+        console.log({ status: 'Success',
+            response: aiResponse,
+            results: finalResults,
+            meta: { originalPrompt: userPrompt }})
+
+        return res.json({
+            status: 'Success',
+            response: aiResponse,
+            results: finalResults,
+            meta: { originalPrompt: userPrompt }
         });
 
     } catch (error) {
-        console.error("Agent Controller Error:", error);
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-// --- GET HISTORY HANDLER (Sidebar) ---
-const getUserHistory = async (req, res) => {
-    try {
-        if (!req.user) return res.status(401).json({ success: false, message: "Unauthorized" });
-
-        const conversations = await Conversation.find({ userEmail: req.user.email })
-            .sort({ lastUpdated: -1 });
-
-        res.json({ success: true, history: conversations });
-    } catch (error) {
-        console.error("History Error:", error);
-        res.status(500).json({ success: false, message: "Failed to load history" });
+        console.error("❌ [Agent] Critical Error:", error);
+        return res.status(500).json({ error: 'I encountered a major error while processing your request.', details: error.message || String(error) });
     }
 };
 
 module.exports = {
     handleAgentCommand,
-    getUserHistory,
     upload
 };
-
-
-// const fs = require("fs");
-// const path = require("path");
-// const multer = require("multer");
-
-// // NOTE: These services must be implemented to return results and intents as expected.
-// const { classifyIntent } = require("../services/intentClassifier");
-// const { translateIntent } = require("../services/intentToMongo");
-// const { executeQuery } = require("../services/queryEngine");
-// const Employee = require("../models/Employee"); // Assuming this is your Mongoose model
-
-// // ------------------------------
-// // 1. MULTER DISK STORAGE SETUP
-// // ------------------------------
-// const storage = multer.diskStorage({
-//     destination: (req, file, cb) => {
-//         const folderPath = path.join(__dirname, "../data");
-//         if (!fs.existsSync(folderPath)) {
-//             fs.mkdirSync(folderPath, { recursive: true });
-//         }
-//         cb(null, folderPath);
-//     },
-//     filename: (req, file, cb) => {
-//         const timestamp = Date.now();
-//         const safeName = file.originalname.replace(/\s+/g, "_");
-//         cb(null, `${timestamp}-${safeName}`);
-//     }
-// });
-
-// const upload = multer({ storage });
-
-// // ----------------------------------
-// // IN-MEMORY SESSION CONTEXT STORAGE
-// // ----------------------------------
-// const SESSION_CONTEXT = {};
-
-// // ----------------------------------
-// // 2. HELPER FUNCTIONS
-// // ----------------------------------
-
-// const safeNumber = v => (typeof v === 'number' && !Number.isNaN(v)) ? v : null;
-// const fmtNumber = n => {
-//     const num = safeNumber(n);
-//     if (num == null) return 'N/A';
-//     // Use toLocaleString for general numbers, limit to 2 decimal places
-//     return Number(num).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-// };
-// const fmtCurrency = n => {
-//     const num = safeNumber(n);
-//     if (num == null) return 'N/A';
-//     return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-// };
-// const plural = (n, singular, pluralForm) => (n === 1 ? singular : (pluralForm || singular + 's'));
-
-// /**
-//  * 3. generateAgentResponse(results, intentResults)
-//  *
-//  * Produces a concise, human-friendly message describing what the agent did.
-//  */
-// const generateAgentResponse = (results = [], intentResults = []) => {
-//     if (!results || results.length === 0) return "I completed the request, but there was no data returned from the database.";
-
-//     const firstIntent = intentResults[0] || {};
-//     const firstResult = results[0] || {};
-//     const action = firstResult.action || 'unknown';
-
-//     // Handle Chat/Error Intents immediately
-//     if (firstIntent.intent === 'CHAT_RESPONSE') return firstIntent.response || "Okay, I've noted that.";
-//     if (action === 'unknown') return firstResult.message || "I couldn't translate that into a database action. Could you rephrase?";
-
-//     // --- Multi-Step Action Handling (More Humanoid) ---
-//     if (results.length > 1) {
-//         const parts = results.map(r => {
-//             switch (r.action) {
-//                 case 'insertMany':
-//                 case 'create': {
-//                     const arr = Array.isArray(r.data) ? r.data : [r.data].filter(Boolean);
-//                     const names = arr.map(e => e?.name).filter(Boolean);
-//                     const count = arr.length;
-//                     if (count === 0) return 'tried to add records (no details)';
-//                     return `**added ${count} ${plural(count, 'record')}**${names.length ? ` (${names.join(', ')})` : ''}`;
-//                 }
-//                 case 'updateMany': {
-//                     const modified = r.data?.modifiedCount || 0;
-//                     const names = Array.isArray(r.data?.matchedDocs) ? r.data.matchedDocs.map(e => e.name).filter(Boolean) : [];
-//                     if (modified === 0) return 'performed an update (0 records changed)';
-//                     return `**updated ${modified} ${plural(modified, 'record')}**`;
-//                 }
-//                 case 'deleteMany': {
-//                     const deleted = r.data?.deletedCount || 0;
-//                     return deleted ? `**removed ${deleted} ${plural(deleted, 'record')}**` : 'performed a deletion (0 records removed)';
-//                 }
-//                 case 'aggregate': {
-//                     const rows = Array.isArray(r.data) ? r.data : [r.data].filter(Boolean);
-//                     const metrics = rows.map(row => {
-//                         const keys = Object.keys(row).filter(k => typeof row[k] === 'number');
-//                         return keys.map(k => {
-//                             const isCurrency = k.toLowerCase().includes('salary') || k.toLowerCase().includes('comp');
-//                             // Fallback to the key name if _id and name are missing (e.g., $count)
-//                             const label = row.name || row._id || k.replace(/_/g, ' '); 
-//                             return `${label}: ${isCurrency ? fmtCurrency(row[k]) : fmtNumber(row[k])}`;
-//                         }).join(', ');
-//                     });
-//                     return metrics.length ? `**calculated metrics** (${metrics.join(', ')})` : 'could not calculate metrics';
-//                 }
-//                 case 'find': {
-//                     const count = Array.isArray(r.data) ? r.data.length : (r.data ? 1 : 0);
-//                     return count ? `**retrieved ${count} ${plural(count, 'record')}**` : 'found no matching records';
-//                 }
-//                 default: return r.message || 'completed an action';
-//             }
-//         });
-//         // Construct the final, natural-sounding multi-step summary
-//         const final = parts.length === 1 ? parts[0] : parts.slice(0, -1).join(', ') + ' and ' + parts.slice(-1);
-//         return `I've finished the sequence: I **${final}**.`;
-//     }
-
-//     // --- Single-Step Action Handling (More Humanoid) ---
-//     switch (action) {
-//         case 'find': {
-//             const rows = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data].filter(Boolean);
-//             const count = rows.length;
-
-//             if (count === 0) return "I searched, but I didn't find any employees matching your criteria.";
-//             if (count === 1) {
-//                 const e = rows[0];
-//                 return `I found **${e.name || 'one employee'}**${e.department ? ` in the **${e.department}** department` : ''}.`;
-//             }
-//             const names = rows.map(e => e.name).filter(Boolean).slice(0, 5); // Show up to 5 names
-//             const nameList = names.length > 0 ? ` (e.g., ${names.join(', ')}${rows.length > 5 ? '...' : ''})` : '';
-//             return `I found **${count}** employees matching that search${nameList}.`;
-//         }
-//         case 'aggregate': {
-//             const rows = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data].filter(Boolean);
-//             const metrics = rows.map(row => {
-//                 const keys = Object.keys(row).filter(k => typeof row[k] === 'number');
-//                 return keys.map(k => {
-//                     const isCurrency = k.toLowerCase().includes('salary') || k.toLowerCase().includes('comp');
-//                     const label = row.name || row._id || k.replace(/_/g, ' ');
-//                     return `**${label}**: ${isCurrency ? fmtCurrency(row[k]) : fmtNumber(row[k])}`;
-//                 }).join(', ');
-//             });
-//             return metrics.length ? `Here are the calculations you requested: ${metrics.join(', ')}.` : 'I aggregated the data, but the result was empty.';
-//         }
-//         case 'insertMany':
-//         case 'create': {
-//             const arr = Array.isArray(firstResult.data) ? firstResult.data : [firstResult.data].filter(Boolean);
-//             const count = arr.length;
-//             const names = arr.map(e => e?.name).filter(Boolean);
-//             if (count === 0) return 'The creation command ran, but no records were inserted. Something might be wrong.';
-//             if (count === 1) return `Successfully added **${names[0] || 'a new record'}** to the database.`;
-//             return `I successfully added **${count} new records**${names.length ? `, including ${names.slice(0, 3).join(', ')}` : ''}.`;
-//         }
-//         case 'updateMany': {
-//             const modified = firstResult.data?.modifiedCount || 0;
-//             const names = Array.isArray(firstResult.data?.matchedDocs) ? firstResult.data.matchedDocs.map(e => e.name).filter(Boolean) : [];
-//             if (modified > 0) return `I've successfully updated **${modified} ${plural(modified, 'record')}** in the database.`;
-//             return 'No records were changed; either the filter matched nothing, or the values were already set.';
-//         }
-//         case 'deleteMany': {
-//             const removed = firstResult.data?.deletedCount || 0;
-//             return removed ? `I have removed **${removed} ${plural(removed, 'record')}** as requested.` : 'No records matched the criteria for deletion.';
-//         }
-//         default: return 'The database operation completed successfully. How else can I help?';
-//     }
-// };
-
-// // ----------------------------------
-// // 4. MAIN HANDLER
-// // ----------------------------------
-// const handleAgentCommand = async (req, res) => {
-//     const { prompt, sessionId = 'default-session' } = req.body || {};
-//     const file = req.file;
-
-//     if (!prompt && !file) return res.status(400).json({ error: 'A prompt or file attachment must be provided.' });
-
-//     try {
-//         // NOTE: Destructure again here to avoid potential shadowing issues from the above check.
-//         let { prompt: userPrompt, sessionId: currentSessionId = "default-session" } = req.body;
-//         const attachedFile = req.file;
-
-//         console.log(`📩 Prompt: "${userPrompt}", File: ${attachedFile ? attachedFile.filename : "None"}`);
-
-//         // 2. PROCESS FILE (Saved via Multer)
-//         let augmentedPrompt = userPrompt || "";
-
-//         if (attachedFile) {
-//             try {
-//                 // Ensure a temporary file is deleted after use in a production environment!
-//                 const fullPath = attachedFile.path;
-//                 const fileContent = fs.readFileSync(fullPath, "utf8");
-
-//                 augmentedPrompt += `
-// [ATTACHED FILE (${attachedFile.originalname}) SAVED AT ${fullPath}]
-// ${fileContent}
-
-// [INSTRUCTION]: Analyze the above file based on the user's request.`;
-
-//             } catch (err) {
-//                 console.error("❌ File Read Error:", err);
-//                 return res.status(500).json({ error: "Failed to read saved file." });
-//             }
-//         }
-
-//         // 3. CONTEXT PREP
-//         const context = SESSION_CONTEXT[currentSessionId] || {};
-//         const intentResults = await classifyIntent(augmentedPrompt, JSON.stringify(context));
-//         const firstIntent = intentResults[0] || {};
-
-//         if (firstIntent.intent === 'ERROR') {
-//             console.error("AI Classification Error:", firstIntent.message);
-//             return res.status(500).json(firstIntent);
-//         }
-
-//         if (firstIntent.intent === 'AMBIGUOUS_QUERY') {
-//             const humanOptions = (firstIntent.suggestions || []).map(opt =>
-//                 opt.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-//             );
-//             return res.json({
-//                 status: 'Clarification Needed',
-//                 response: `Your query is ambiguous. I'm not sure which field you mean. Could you clarify, perhaps by choosing one of these: ${humanOptions.join(', ')}?`,
-//                 options: humanOptions,
-//                 meta: { originalPrompt: userPrompt }
-//             });
-//         }
-
-//         if (firstIntent.intent === 'CHAT_RESPONSE') {
-//             return res.json({
-//                 status: 'Processed',
-//                 response: firstIntent.response || 'Understood.',
-//                 results: [],
-//                 meta: { originalPrompt: userPrompt }
-//             });
-//         }
-
-//         // --- Execute Database Operations ---
-//         const dbOperations = translateIntent(intentResults);
-//         const finalResults = [];
-
-//         for (const op of dbOperations) {
-//             if (!op || op.action === 'unknown') {
-//                 finalResults.push({ status: 'Unprocessed', message: op?.reason || 'unknown operation' });
-//                 continue;
-//             }
-
-//             try {
-//                 const dataResult = await executeQuery(op, Employee);
-
-//                 // Preserve matched docs for humanoid response generation
-//                 finalResults.push({ action: op.action, data: dataResult, filterOrPipelineUsed: op.filter || op.pipeline || op.data || {} });
-
-//                 // Update Session Context
-//                 if (['find', 'aggregate'].includes(op.action)) {
-//                     SESSION_CONTEXT[currentSessionId] = {
-//                         lastAction: op.action,
-//                         lastFilter: op.filter || op.pipeline,
-//                         resultCount: Array.isArray(dataResult) ? dataResult.length : (dataResult ? 1 : 0)
-//                     };
-//                 } else if (['updateMany', 'deleteMany', 'create', 'insertMany'].includes(op.action)) {
-//                     // Reset context after modifying data
-//                     delete SESSION_CONTEXT[currentSessionId];
-//                 }
-//             } catch (queryError) {
-//                 // Attach error message to result list for multi-step failure reporting
-//                 finalResults.push({ action: op.action, data: null, message: `Database query failed: ${queryError.message}` });
-//             }
-//         }
-
-//         const aiResponse = generateAgentResponse(finalResults, intentResults);
-
-//         return res.json({
-//             status: 'Success',
-//             response: aiResponse, // The final, conversational message
-//             results: finalResults, // Raw results for frontend debugging/display
-//             meta: { originalPrompt: userPrompt }
-//         });
-
-//     } catch (error) {
-//         console.error('Agent Error:', error);
-//         return res.status(500).json({ error: 'I encountered a major error while processing your request.', details: error.message || String(error) });
-//     }
-// };
-
-// module.exports = {
-//     handleAgentCommand,
-//     upload
-// };
-
-
-

@@ -97,7 +97,6 @@ export default function Contact() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // --- REPLACED AXIOS WITH FETCH HERE ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatus('loading');
@@ -139,7 +138,7 @@ export default function Contact() {
     <div className="min-h-screen bg-slate-950 text-white overflow-hidden relative selection:bg-amber-500/30">
       <Header />
       
-      {/* --- Ambient Background Effects --- */}
+      {/* Ambient Background Effects */}
       <div className="fixed inset-0 pointer-events-none">
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.15]" />
         
@@ -161,7 +160,7 @@ export default function Contact() {
         
         <div className="grid lg:grid-cols-2 gap-20 items-start">
           
-          {/* --- Left Column --- */}
+          {/*Left Column */}
           <motion.div 
             initial={{ opacity: 0, x: -50 }}
             animate={{ opacity: 1, x: 0 }}

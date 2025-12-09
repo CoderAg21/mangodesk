@@ -14,7 +14,7 @@ router.post('/', async (req, res) => {
   try {
     // Transporter configuration
     const transporter = nodemailer.createTransport({
-      service: 'gmail', // Or your SMTP provider (Outlook, Yahoo, etc.)
+      service: 'gmail', 
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS,
@@ -24,7 +24,7 @@ router.post('/', async (req, res) => {
     // Email Layout
     const mailOptions = {
       from: `MangoDesk Contact Form <${process.env.EMAIL_USER}>`,
-      to: process.env.RECEIVER_EMAIL, // abhayagrahari52@gmail.com
+      to: process.env.RECEIVER_EMAIL, 
       replyTo: email,
       subject: `New Message from ${firstName} ${lastName || ''}`,
       html: `

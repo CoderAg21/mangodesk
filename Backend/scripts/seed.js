@@ -1,4 +1,3 @@
-// Backend/scripts/seed.js
 require('dotenv').config();
 const mongoose = require('mongoose');
 const fs = require('fs');
@@ -24,6 +23,9 @@ const educationLevels = ['B.Tech', 'M.Tech', 'PhD', 'MBA', 'B.Sc'];
 const genders = ['Male', 'Female'];
 const currentYear = new Date().getFullYear();
 
+// Helper function to generate a unique Employee ID (matching queryEngine logic)
+const generateEmployeeId = (data) => data.employee_id || `EMP-${Math.floor(Math.random() * 900000 + 100000)}`;
+
 console.log(` Reading CSV from: ${csvFilePath}`);
 
 fs.createReadStream(csvFilePath)
@@ -34,6 +36,9 @@ fs.createReadStream(csvFilePath)
     
     const employeeData = {
       ...row,
+      // CRITICAL FIX: Ensure every employee has an ID, using a new ID if not present in the CSV row
+      employee_id: generateEmployeeId(row),
+      
       // Ensure numbers are numbers
       salary_usd: parseInt(row.salary_usd) || 0,
       bonus_usd: parseInt(row.bonus_usd) || 0,
