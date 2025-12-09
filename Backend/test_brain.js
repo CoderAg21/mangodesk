@@ -1,5 +1,5 @@
 require('dotenv').config(); // Load API Key and Proxy URL
-// const { setGlobalDispatcher, ProxyAgent } = require("undici");
+const { setGlobalDispatcher, ProxyAgent } = require("undici");
 const { classifyIntent } = require('./services/intentClassifier');
 async function runTests(prompt) {
     console.log(" Starting Brain Tests...\n");

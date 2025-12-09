@@ -8,15 +8,38 @@ const passport = require("passport");
 const moment = require('moment');
 const fs = require('fs');         
 const csv = require('csv-parser'); 
+<<<<<<< HEAD
+const Conversation = require('./models/conversationModel');
+const axios = require('axios')
+=======
 const downloadRoutes = require("./routes/downloadRoutes");
+>>>>>>> d1764231458bb5088fa096a832d8a7c40bc77c44
 const agentRoutes = require('./routes/agentRoutes');
 const passportSetup = require("./config/passport");
 const contactRoutes = require("./routes/contactRoutes");
+const { setGlobalDispatcher, ProxyAgent } = require("undici");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+<<<<<<< HEAD
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mangoDesk';
+const csvFilePath = path.join(__dirname, 'data', 'employees.csv'); // Define CSV path
+=======
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mangodesk';
 const csvFilePath = path.join(__dirname, 'data', 'employees.csv');
+>>>>>>> d1764231458bb5088fa096a832d8a7c40bc77c44
+
+// Proxy COnfiguration
+
+if (process.env.PROXY_URL) {
+     console.log(`[System] Configuring Proxy: ${process.env.PROXY_URL}`);
+     const dispatcher = new ProxyAgent(process.env.PROXY_URL);
+     setGlobalDispatcher(dispatcher);
+ }
+
+
+
+
 
 //Helper Functions
 const calculateTenure = (hireDate, termDate) => {

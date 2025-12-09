@@ -7,6 +7,8 @@ const { translateIntent } = require("../services/intentToMongo");
 const { executeQuery } = require("../services/queryEngine");
 const { executeCSVQuery } = require("../services/csvEngine");
 const Employee = require("../models/Employee");
+const Conversation = require("../models/conversationModel");
+
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -234,10 +236,19 @@ const handleAgentCommand = async (req, res) => {
     try {
         let { prompt: userPrompt, sessionId: currentSessionId = "default-session" } = req.body;
         const attachedFile = req.file;
-
+        const userEmail = req.user ? req.user.email : "guest@mangodesk.com"; 
         console.log(`\n🔹 [Agent] New Request | Session: ${currentSessionId}`);
         console.log(`🔹 [Agent] Prompt: "${userPrompt}"`);
         if (attachedFile) console.log(`🔹 [Agent] File Attached: ${attachedFile.originalname}`);
+        // Saving User prompt to history
+        let chat = await Conversation.findOne({ sessionId: currentSessionId });
+        if (!chat) chat = new Conversation({ sessionId: currentSessionId, userEmail, messages: [] });
+        chat.messages.push({
+            sender: 'user',
+            text: userPrompt || `[File: ${attachedFile ? attachedFile.originalname : 'No Text'}]`
+        });
+        await chat.save();
+
 
         if (userPrompt && userPrompt.toLowerCase().includes('confirm delete') && SESSION_CONTEXT[currentSessionId]?.pendingAction === 'DELETE_ALL') {
             console.log("🔸 [Agent] Delete Confirmation Received.");
