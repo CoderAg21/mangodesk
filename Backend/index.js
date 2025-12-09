@@ -5,9 +5,9 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const session = require("express-session");
 const passport = require("passport");
-const moment = require('moment'); // Required for date handling
-const fs = require('fs');         // Required for file system operations (CSV read)
-const csv = require('csv-parser'); // Assuming 'csv-parser' is used for CSV parsing
+const moment = require('moment');
+const fs = require('fs');         
+const csv = require('csv-parser'); 
 
 const agentRoutes = require('./routes/agentRoutes');
 const passportSetup = require("./config/passport");
@@ -18,14 +18,8 @@ const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/mangodesk';
 const csvFilePath = path.join(__dirname, 'data', 'employees.csv'); // Define CSV path
 
-// --- Helper Functions ---
+//Helper Functions
 
-/**
- * Calculates the tenure in years between a hire date and a termination date (or today).
- * @param {string} hireDate - The hire date string.
- * @param {string} termDate - The optional termination date string.
- * @returns {number} Tenure in years.
- */
 const calculateTenure = (hireDate, termDate) => {
     const start = moment(hireDate, ['M/D/YYYY', 'YYYY-MM-DD', 'DD-MM-YYYY']);
     
@@ -43,7 +37,7 @@ const calculateTenure = (hireDate, termDate) => {
 };
 
 
-// --- Middleware Configuration ---
+// Middleware Configuration
 app.use(express.json()); // To parse JSON bodies
 app.use(cors({
     origin: "http://localhost:3000",
@@ -63,8 +57,6 @@ app.use(passport.initialize());
 app.use(passport.session());
 passportSetup(passport);
 
-// --- ROUTES ---
-
 // AI Agent Route (Handles data queries and file uploads via multer middleware inside agentRoutes)
 app.use('/api/brain', agentRoutes); 
 
@@ -72,7 +64,7 @@ app.use('/api/brain', agentRoutes);
 app.use('/api/contact', contactRoutes);
 
 
-// Route: Get Employees from CSV (Example legacy route)
+//  Get Employees from CSV (Example legacy route)
 app.get('/api/employees', (req, res) => {
     const results = [];
     // Check for the file existence before attempting to read
@@ -145,7 +137,7 @@ app.get("/logout", (req, res, next) => {
 });
 
 
-// --- Server & Database Connection ---
+// Server 
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log("MongoDB connected"))

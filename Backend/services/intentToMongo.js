@@ -1,78 +1,49 @@
-// Backend/services/intentToMongo.js - MODIFIED for DELETE_ALL
-
-/**
- * Translates the AI's "Intent Object" into a specific MongoDB Execution Operation.
- * INPUT: Array of AI Intent Objects
- * OUTPUT: Array of Executable MongoDB Operation Objects
- */
-
+// services/intentToMongo.js
 const translateIntent = (aiResult) => {
     const operations = Array.isArray(aiResult) ? aiResult : [aiResult];
     const mongoOperations = [];
 
-    for (const { intent, collection, query, data, pipeline } of operations) {
+    for (const rawOp of operations) {
+        const { intent, collection, query, filter, data, pipeline, projection } = rawOp || {};
         const targetCollection = collection || 'employees';
+        const effectiveFilter = query || filter || {};
 
         switch (intent) {
             case 'READ_DB':
-                mongoOperations.push({ action: 'find', collection: targetCollection, filter: query || {} });
+                mongoOperations.push({ action: 'find', collection: targetCollection, filter: effectiveFilter, projection });
                 break;
 
             case 'AGGREGATE_DB':
-                if (!pipeline || pipeline.length === 0) {
-                    throw new Error("Aggregation intent missing 'pipeline' stages.");
-                }
-                mongoOperations.push({ action: 'aggregate', collection: targetCollection, pipeline: pipeline });
+                if (!pipeline || pipeline.length === 0) throw new Error("Aggregation missing 'pipeline'.");
+                mongoOperations.push({ action: 'aggregate', collection: targetCollection, pipeline, projection });
                 break;
 
             case 'UPDATE_DB':
-                if (!data) throw new Error("Update intent missing 'data' field.");
-                
-                const isOperatorPresent = Object.keys(data).some(key => key.startsWith('$'));
-                const updateObject = isOperatorPresent ? data : { $set: data };
-
-                mongoOperations.push({
-                    action: 'updateMany',
-                    collection: targetCollection,
-                    filter: query || {},
-                    update: updateObject 
-                });
+                if (!data) throw new Error("Update missing 'data' field.");
+                const updateObject = Object.keys(data).some(k => k.startsWith('$')) ? data : { $set: data };
+                mongoOperations.push({ action: 'updateMany', collection: targetCollection, filter: effectiveFilter || {}, update: updateObject, projection });
                 break;
 
             case 'WRITE_DB':
-                if (!data) throw new Error("Create intent missing 'data' field.");
-                
-                const action = Array.isArray(data) ? 'insertMany' : 'create';
-                mongoOperations.push({ action, collection: targetCollection, data });
+                if (!data) throw new Error("Create missing 'data' field.");
+                mongoOperations.push({ action: Array.isArray(data) ? 'insertMany' : 'create', collection: targetCollection, data, projection });
                 break;
 
             case 'DELETE_DB':
-                // Check if the query is too broad (no query provided)
-                if (!query || Object.keys(query).length === 0) {
-                    throw new Error("Safety Error: Must specify a filter to delete.");
-                }
-                
-                mongoOperations.push({
-                    action: 'deleteMany',
-                    collection: targetCollection, 
-                    filter: query 
-                });
+                if (!effectiveFilter || Object.keys(effectiveFilter).length === 0) throw new Error("Safety: Specify a filter to delete.");
+                mongoOperations.push({ action: 'deleteMany', collection: targetCollection, filter: effectiveFilter, projection });
                 break;
-            
+
             case 'DELETE_ALL':
-                // DELETE_ALL bypasses filter check and is handled by the controller for confirmation.
-                // It is left blank here because the controller modifies the intent to DELETE_DB after confirmation.
-                // If it somehow reached here without confirmation, it's an error.
-                throw new Error("DELETE_ALL intent requires confirmation handling in the controller.");
+                throw new Error("DELETE_ALL requires controller confirmation.");
 
             case 'AMBIGUOUS_QUERY':
             case 'NON_DB_QUERY':
             case 'CHAT_RESPONSE':
-                // These are informational intents handled directly by the controller, skip translation.
                 break;
 
             default:
-                mongoOperations.push({ action: 'unknown', reason: `Intent '${intent}' is not yet supported.` });
+                mongoOperations.push({ action: 'unknown', reason: `Intent '${intent}' not supported.` });
                 break;
         }
     }

@@ -1,4 +1,3 @@
-import React from 'react';
 import { motion } from 'framer-motion';
 import { Github, Linkedin, Instagram, Terminal} from 'lucide-react';
 import Header from '../Components/Header'; 
@@ -101,9 +100,6 @@ export default function Team() {
   );
 }
 
-// ----------------------------------------------------------------------
-// SUB-COMPONENT: The "Best Frame" Card
-// ----------------------------------------------------------------------
 function TeamCard({ member, index }) {
   return (
     <motion.div
@@ -113,20 +109,18 @@ function TeamCard({ member, index }) {
       transition={{ delay: index * 0.1 }}
       className="group relative"
     >
-      {/* 1. Glass Container */}
+     
       <div className="relative h-full bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-3xl overflow-hidden transition-all duration-500 group-hover:border-white/20 group-hover:shadow-[0_0_40px_-10px_rgba(245,158,11,0.2)]">
         
-        {/* 2. Gradient Hover Border Effect */}
+       
         <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-b ${member.gradient} mix-blend-overlay pointer-events-none`} />
         
         <div className="p-6 flex flex-col items-center">
           
-          {/* 3. Image Frame (The "Portal") */}
+         
           <div className="relative mb-6">
-            {/* Spinning Ring */}
+           
             <div className={`absolute -inset-1 rounded-full bg-gradient-to-r ${member.gradient} opacity-20 group-hover:opacity-100 blur transition-all duration-500`} />
-            
-            {/* Image Container */}
             <div className="relative w-32 h-32 rounded-full p-1 bg-slate-950 border border-white/10 overflow-hidden group-hover:scale-105 transition-transform duration-500">
               <img 
                 src={`https://github.com/${member.githubUser}.png`} 
@@ -134,8 +128,6 @@ function TeamCard({ member, index }) {
                 className="w-full h-full rounded-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500"
               />
             </div>
-
-            {/* Floating Tech Deco */}
             <motion.div 
               animate={{ rotate: 360 }}
               transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
@@ -143,7 +135,7 @@ function TeamCard({ member, index }) {
             />
           </div>
 
-          {/* 4. Text Content */}
+         
           <h3 className="text-xl font-bold text-white mb-1 group-hover:text-amber-400 transition-colors">
             {member.name}
           </h3>
@@ -151,7 +143,7 @@ function TeamCard({ member, index }) {
             {member.role}
           </p>
 
-          {/* 5. Social Dock */}
+     
           <div className="flex items-center gap-3 w-full justify-center pt-6 border-t border-white/5">
             <SocialIcon 
               href={member.linkedin} 
@@ -165,7 +157,6 @@ function TeamCard({ member, index }) {
               delay={0.1} 
               color="hover:text-pink-400"
             />
-            {/* GitHub Link (Bonus) */}
             <SocialIcon 
               href={`https://github.com/${member.githubUser}`} 
               icon={Github} 

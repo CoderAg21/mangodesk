@@ -1,3 +1,4 @@
+// controllers/agentController.js
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
@@ -20,7 +21,6 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
-
 const SESSION_CONTEXT = {};
 
 const safeNumber = v => (typeof v === 'number' && !Number.isNaN(v)) ? v : null;
@@ -37,7 +37,7 @@ const fmtCurrency = n => {
 const plural = (n, singular, pluralForm) => (n === 1 ? singular : (pluralForm || singular + 's'));
 
 const summarizeNames = (docs = [], limit = 10) => {
-    const names = docs.map(d => d.name).filter(Boolean);
+    const names = docs.map(d => (d && (d.name || d.employee_id || d._id)) ? (d.name ? d.name : (d.employee_id || d._id)) : null).filter(Boolean);
     if (names.length === 0) return '';
     if (names.length <= limit) return names.join(', ');
     return `${names.slice(0, limit).join(', ')}${names.length > limit ? ', ...' : ''}`;
@@ -45,21 +45,23 @@ const summarizeNames = (docs = [], limit = 10) => {
 
 const generateAgentResponse = (results = [], intentResults = []) => {
     if (!results || results.length === 0) return "I completed the request, but there was no data returned.";
+
     const firstIntent = intentResults[0] || {};
     const firstResult = results.find(r => r.action && r.action !== 'unknown') || results[0] || {};
     const action = firstResult.action || 'unknown';
+
     if (firstIntent.intent === 'CHAT_RESPONSE') return firstIntent.response || "Okay, I've noted that.";
     if (firstIntent.intent === 'NON_DB_QUERY') return "I'm here to work with your employee database. I can't answer general knowledge or math questions.";
     if (action === 'unknown') return firstResult.message || "I couldn't translate that into an action. Could you rephrase?";
 
     if (results.length > 1) {
         const parts = results.map((r, idx) => {
-            const src = r.source || 'DB';
+            const src = r.source || 'database';
             if (r.action === 'find') {
                 const count = Array.isArray(r.data) ? r.data.length : (r.data ? 1 : 0);
-                const names = Array.isArray(r.matchedDocs) ? summarizeNames(r.matchedDocs, 20) : (Array.isArray(r.data) ? summarizeNames(r.data, 20) : '');
+                const names = Array.isArray(r.matchedDocs) && r.matchedDocs.length ? summarizeNames(r.matchedDocs, 20) : (Array.isArray(r.data) ? summarizeNames(r.data, 20) : '');
                 if (count === 0) return `Step ${idx + 1}: I searched the ${src} and found 0 records.`;
-                return `Step ${idx + 1}: I retrieved ${count} ${plural(count, 'record')} from the ${src}${names ? ` — names: ${names}` : ''}.`;
+                return `Step ${idx + 1}: Retrieved ${count} ${plural(count, 'record')} from the ${src}${names ? ` — names/ids: ${names}` : ''}.`;
             }
             if (r.action === 'aggregate') {
                 const rows = Array.isArray(r.data) ? r.data : (r.data ? [r.data] : []);
@@ -87,13 +89,13 @@ const generateAgentResponse = (results = [], intentResults = []) => {
             if (r.action === 'updateMany') {
                 const modified = (r.data && (r.data.modifiedCount ?? r.data.nModified ?? r.data.modified)) || 0;
                 const matched = (r.data && (r.data.matchedCount ?? r.data.n ?? r.data.matched)) || 0;
-                const names = Array.isArray(r.matchedDocs) ? summarizeNames(r.matchedDocs, 20) : '';
+                const names = Array.isArray(r.matchedDocs) && r.matchedDocs.length ? summarizeNames(r.matchedDocs, 20) : '';
                 if (modified === 0) return `Step ${idx + 1}: Performed update on ${src} (0 changed)${names ? ` — matched: ${names}` : ''}`;
                 return `Step ${idx + 1}: Updated ${modified} ${plural(modified, 'record')}${names ? ` — names/ids: ${names}` : ''}`;
             }
             if (r.action === 'deleteMany') {
                 const deleted = (r.data && (r.data.deletedCount ?? r.data.n ?? r.data.deleted)) || 0;
-                const names = Array.isArray(r.matchedDocs) ? summarizeNames(r.matchedDocs, 20) : '';
+                const names = Array.isArray(r.matchedDocs) && r.matchedDocs.length ? summarizeNames(r.matchedDocs, 20) : '';
                 if (deleted === 0) return `Step ${idx + 1}: Deletion ran on ${src} (0 removed)${names ? ` — matched: ${names}` : ''}`;
                 return `Step ${idx + 1}: Deleted ${deleted} ${plural(deleted, 'record')}${names ? ` — names/ids: ${names}` : ''}`;
             }
@@ -106,14 +108,14 @@ const generateAgentResponse = (results = [], intentResults = []) => {
     if (action === 'find') {
         const rows = Array.isArray(firstResult.data) ? firstResult.data : (firstResult.data ? [firstResult.data] : []);
         const count = rows.length;
-        const src = firstResult.source || 'DB';
+        const src = firstResult.source || 'database';
         if (count === 0) return `I searched the ${src} and found no matching employees.`;
         if (count === 1) {
             const e = rows[0];
-            return `Here is the employee you asked for: ${e.name || 'Unknown'}${e.employee_id ? ` (ID: ${e.employee_id})` : ''}${e.department ? ` — ${e.department}` : ''}.`;
+            return `Here is the employee you asked for: ${e.name || e.employee_id || 'Unknown'}${e.employee_id ? ` (ID: ${e.employee_id})` : ''}${e.department ? ` — ${e.department}` : ''}.`;
         }
         const names = summarizeNames(rows, 100);
-        return `Here are the ${count} employees I found in the ${firstResult.source || 'database'}: ${names}.`;
+        return `Here are the ${count} employees I found in the ${src}: ${names}.`;
     }
 
     if (action === 'aggregate') {
@@ -239,9 +241,9 @@ const handleAgentCommand = async (req, res) => {
                     const matchedDoc = checkResults[0];
                     try {
                         const delRes = await executeQuery(op, Employee);
-                        finalResults.push({ source: 'DB', action: op.action, data: delRes, matchedDocs: [matchedDoc], filterOrPipelineUsed: op.filter || op.pipeline });
+                        finalResults.push({ source: 'database', action: op.action, data: delRes, matchedDocs: [matchedDoc], filterOrPipelineUsed: op.filter || op.pipeline });
                     } catch (err) {
-                        finalResults.push({ source: 'DB', action: op.action, data: null, message: `Delete failed: ${err.message}`, matchedDocs: [matchedDoc], filterOrPipelineUsed: op.filter || op.pipeline });
+                        finalResults.push({ source: 'database', action: op.action, data: null, message: `Delete failed: ${err.message}`, matchedDocs: [matchedDoc], filterOrPipelineUsed: op.filter || op.pipeline });
                     }
                     continue;
                 }
@@ -251,32 +253,32 @@ const handleAgentCommand = async (req, res) => {
                 const matchedDocs = await Employee.find(op.filter).limit(200).lean();
                 try {
                     const updateRes = await executeQuery(op, Employee);
-                    finalResults.push({ source: 'DB', action: op.action, data: updateRes, matchedDocs, filterOrPipelineUsed: op.filter || op.pipeline });
+                    finalResults.push({ source: 'database', action: op.action, data: updateRes, matchedDocs, filterOrPipelineUsed: op.filter || op.pipeline });
                 } catch (err) {
-                    finalResults.push({ source: 'DB', action: op.action, data: null, message: `Update failed: ${err.message}`, matchedDocs, filterOrPipelineUsed: op.filter || op.pipeline });
+                    finalResults.push({ source: 'database', action: op.action, data: null, message: `Update failed: ${err.message}`, matchedDocs, filterOrPipelineUsed: op.filter || op.pipeline });
                 }
                 continue;
             }
 
-            if ((op.action === 'find' || op.action === 'aggregate' || op.action === 'create' || op.action === 'insertMany' || op.action === 'deleteMany') ) {
+            if (['find', 'aggregate', 'create', 'insertMany', 'deleteMany'].includes(op.action)) {
                 try {
-                    const resData = await executeQuery(op, Employee);
+                    const resData = await executeQuery(op, Employee, op.projection);
                     let matchedDocs = [];
                     if (op.action === 'find' && Array.isArray(resData)) matchedDocs = resData;
                     if ((op.action === 'create' || op.action === 'insertMany') && resData) matchedDocs = Array.isArray(resData) ? resData : [resData];
                     if (op.action === 'aggregate') matchedDocs = Array.isArray(resData) ? resData : (resData ? [resData] : []);
-                    finalResults.push({ source: 'DB', action: op.action, data: resData, matchedDocs, filterOrPipelineUsed: op.filter || op.pipeline });
+                    finalResults.push({ source: 'database', action: op.action, data: resData, matchedDocs, filterOrPipelineUsed: op.filter || op.pipeline });
                 } catch (err) {
-                    finalResults.push({ source: 'DB', action: op.action, data: null, message: `DB failed: ${err.message}`, filterOrPipelineUsed: op.filter || op.pipeline });
+                    finalResults.push({ source: 'database', action: op.action, data: null, message: `DB failed: ${err.message}`, filterOrPipelineUsed: op.filter || op.pipeline });
                 }
                 continue;
             }
 
             try {
-                const resData = await executeQuery(op, Employee);
-                finalResults.push({ source: 'DB', action: op.action, data: resData, filterOrPipelineUsed: op.filter || op.pipeline });
+                const resData = await executeQuery(op, Employee, op.projection);
+                finalResults.push({ source: 'database', action: op.action, data: resData, filterOrPipelineUsed: op.filter || op.pipeline });
             } catch (err) {
-                finalResults.push({ source: 'DB', action: op.action, data: null, message: `Execution failed: ${err.message}` });
+                finalResults.push({ source: 'database', action: op.action, data: null, message: `Execution failed: ${err.message}` });
             }
         }
 
